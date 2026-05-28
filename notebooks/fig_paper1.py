@@ -1,4 +1,3 @@
-
 import sys
 import os
 import numpy as np
@@ -58,30 +57,33 @@ class Wheel:
         self.n = n
         self.radius = scale
         self.angle_step = 2 * np.pi / n
-        self.angles = np.arange(n) * self.angle_step
+        self.theta_ij = list(np.arange(n) * self.angle_step)
         self.spokes = np.array([
             (center[0] + self.radius * np.cos(angle), 
              center[1] + self.radius * np.sin(angle))
-            for angle in self.angles
+            for angle in self.theta_ij
         ])
+        self.spoke_angles = angles.copy()
+        self.spoke_angles.pop(0) # remove the first angle, which is for the center node
         self.all_edges = [(0, i) for i in range(1, n+1)] + [(i, (i % n) + 1) for i in range(1, n+1)]
         if active_edges is None:
             self.active_edges = self.all_edges
         else:
             self.active_edges = active_edges
-        self.angles = angles if angles is not None else [np.pi / 2] * (n + 1)
+        self.center_angle = angles[0]
 
     def calc_active_edges(self):
         '''Calculate the active edges based on the angles. Edges are active if coupling is negative.'''
         active_edges = []
-        center_angle = self.angles[0]
-        for i in range(1, self.n + 1):
-            spoke_angle = self.angles[i]
-            J = frenkel_coupling(center_angle, spoke_angle, 2 * np.pi * (i - 1) / self.n, 1)
+        center_angle = self.center_angle
+        for i in range(self.n): # between center and spokes
+            phi_j = self.spoke_angles[i]
+            J = frenkel_coupling(center_angle, phi_j, self.angle_step * i, 1)
             if J < 0:
-                active_edges.append((0, i))
-        for i in range(self.n):
-            J = frenkel_coupling(self.angles[i], self.angles[(i + 1) % self.n], np.arctan2(self.spokes[(i+1)%self.n][0] - self.spokes[i][0], self.spokes[(i+1)%self.n][1] - self.spokes[i][1]), 1)
+                active_edges.append((0, i + 1))
+        for i in range(self.n): # between adjacent spokes
+            theta_ij = np.arctan2(self.spokes[(i+1)%self.n][1] - self.spokes[i][1], self.spokes[(i+1)%self.n][0] - self.spokes[i][0])
+            J = frenkel_coupling(self.spoke_angles[i], self.spoke_angles[(i + 1) % self.n], theta_ij, 1)
             if J < 0:
                 active_edges.append((i + 1, (i + 1) % self.n + 1))
         self.active_edges = active_edges
@@ -91,9 +93,9 @@ class Wheel:
         for edge in self.all_edges:
             if edge in self.active_edges:
                 color = '#1a9850'  # bright green
-                linewidth = 2
+                linewidth = 3
             else:
-                color = '#CCCCCC'  # light gray
+                color = '#EEEEEE'  # light gray
                 linewidth = 1
             if edge[0] == 0:  # spoke edge
                 start = self.center
@@ -103,27 +105,44 @@ class Wheel:
                 end = self.spokes[edge[1] - 1]
             ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
         ax.scatter(*self.center, color='blue', s=100, zorder=3)  # center node
-        ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#aaaaaa', s=100, zorder=3)  # spoke nodes
+        ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=100, zorder=3)  # spoke nodes
         if draw_dipoles:
-            for i in range(1, self.n + 1):
-                angle = self.angles[i]
+            for i in range(self.n):
+                angle = self.spoke_angles[i]
                 dx = 0.2 * np.cos(angle)
                 dy = 0.2 * np.sin(angle)
                 ax.arrow(self.spokes[i-1][0], self.spokes[i-1][1], dx, dy, head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
-            ax.arrow(self.center[0], self.center[1], 0.2 * np.cos(self.angles[0]), 0.2 * np.sin(self.angles[0]), head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
+            ax.arrow(self.center[0], self.center[1], 0.2 * np.cos(self.center_angle), 0.2 * np.sin(self.center_angle), head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
         ax.set_aspect('equal')
     
+    def beta0(self):
+        '''Calculate the zeroth Betti number of the wheel graph based on the active edges.'''
+        parent = list(range(self.n + 1))  # include center node (0)
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra = find(a)
+            rb = find(b)
+            if ra != rb:
+                parent[rb] = ra
+
+        for u, v in self.active_edges:
+            union(u, v)
+
+        return len({find(i) for i in range(self.n + 1)})
+
     def beta1(self):
         '''Calculate the first Betti number of the wheel graph based on the active edges.'''
         n_active_edges = len(self.active_edges)
         n_nodes = self.n + 1  # center + spokes
-        beta0 = 1  # wheel graph is always connected
+        beta0 = self.beta0()
         beta1 = n_active_edges - n_nodes + beta0
         return beta1
-
-    def beta0(self):
-        '''Calculate the zeroth Betti number of the wheel graph based on the active edges.'''
-        return 1  # wheel graph is always connected
 
 class SquareWheelGrid:
     def __init__(self, rows, cols, separation, scale, angles=None):
@@ -159,8 +178,8 @@ class SquareWheelGrid:
         for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.btwn_wheel_connections:
             wheel1 = self.wheels[row1][col1]
             wheel2 = self.wheels[row2][col2]
-            angle1 = wheel1.angles[spoke1]
-            angle2 = wheel2.angles[spoke2]
+            angle1 = wheel1.spoke_angles[spoke1-1]
+            angle2 = wheel2.spoke_angles[spoke2-1]
             J = frenkel_coupling(angle1, angle2, np.arctan2(wheel2.spokes[spoke2 - 1][0] - wheel1.spokes[spoke1 - 1][0], wheel2.spokes[spoke2 - 1][1] - wheel1.spokes[spoke1 - 1][1]), 1)
             if J < 0:
                 self.active_btwn_wheel_edges.append(((row1, col1, spoke1), (row2, col2, spoke2)))
@@ -187,6 +206,51 @@ class SquareWheelGrid:
     def render_single_wheel(self, ax, row, col, draw_dipoles=False):
         '''Render a single wheel from the grid on the given matplotlib axis `ax`.'''
         self.wheels[row][col].render_wheel(ax, draw_dipoles=draw_dipoles)
+    
+    def beta0(self):
+        '''Calculate the zeroth Betti number of the grid based on active edges.'''
+        n_wheels = self.rows * self.cols
+        n_local = self.wheels[0][0].n + 1
+        total_nodes = n_wheels * n_local
+
+        adjacency = {node: set() for node in range(total_nodes)}
+
+        def global_id(r, c, local_id):
+            return (r * self.cols + c) * n_local + local_id
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                wheel = self.wheels[r][c]
+                for u, v in wheel.active_edges:
+                    gu = global_id(r, c, u)
+                    gv = global_id(r, c, v)
+                    adjacency[gu].add(gv)
+                    adjacency[gv].add(gu)
+
+        for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.active_btwn_wheel_edges:
+            gu = global_id(row1, col1, spoke1)
+            gv = global_id(row2, col2, spoke2)
+            adjacency[gu].add(gv)
+            adjacency[gv].add(gu)
+
+        visited = set()
+        components = 0
+
+        for node in range(total_nodes):
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        return components
     
     def beta1(self):
         '''Calculate the first Betti number of the grid based on the active edges.'''
@@ -217,7 +281,7 @@ def fig1(save=True):
     if save: # save the figure to the figures directory if specified
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_1_concept.png"), dpi=300)
 
-def fig2(save=True):
+def fig2_mechanism(save=True):
     '''Generate a figure showing 3 different 3x3 grids of wheels, all with n=4 spokes and spoke angles 45 degrees, but with different center angles.'''
     fig, axes = plt.subplots(2, 3, figsize=(15, 12)) # make subplots
     wheel_grid1 = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 10]+[np.pi/4] * 4) # center angle 10 degrees
@@ -256,38 +320,119 @@ def fig2(save=True):
     axes[0][0].set_ylabel("$J / K_s$")
     axes[0][0].set_title("Coupling strength vs. center angle for spoke edges")
     axes[0][0].legend(["Spoke to N/S", "Spoke to E/W"])
-
-
-
-
-
-
+    # second one: graph of loop topology for 3x3 grid as a function of center angle, showing how the first Betti number changes with angle.
+    center_angles = np.linspace(0, 90, 100) * DEG
+    beta1_values = []
+    for theta_c in center_angles:
+        grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c]+[np.pi/4] * 4)
+        grid.calculate_active_edges()
+        beta1_values.append(grid.beta1())
+    axes[0][1].plot(center_angles / DEG, beta1_values, color='purple')
+    axes[0][1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][1].set_ylabel("Independent loops $\\beta_1$")
+    axes[0][1].set_title("Grid loop topology vs. center angle")
+    axes[0][1].text(gamma_ns + 2, 8, f"$\\Gamma_{{NS}} \\approx {gamma_ns:.1f}$°", color='grey')
+    axes[0][1].text(gamma_ew + 2, 8, f"$\\Gamma_{{EW}} \\approx {gamma_ew:.1f}$°", color='grey')
+    axes[0][1].axvline(gamma_ns, color='grey', linestyle='--')
+    axes[0][1].axvline(gamma_ew, color='grey', linestyle='--')
+    axes[0][1].set_ylim(0, max(beta1_values) + 1)
+    # third one: same as second, but beta 0 instead of beta 1. In this case, it should be constant at 1 for all angles, since the grid is always connected.
+    beta0_values = []
+    for theta_c in center_angles:
+        grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c]+[np.pi/4] * 4)
+        grid.calculate_active_edges()
+        beta0_values.append(grid.beta0())
+    axes[0][2].plot(center_angles / DEG, beta0_values, color='green')
+    axes[0][2].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][2].set_ylabel("Connected components $\\beta_0$")
+    axes[0][2].set_title("Grid connectivity vs. center angle")
+    axes[0][2].set_ylim(0, 2) # set y limits to show that beta0 is always 1
 
     if save: # save the figure to the figures directory if specified
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_mechanism.png"), dpi=300)
 
+def fig_2_phase_diagram(save=True):
+    '''Generate a figure showing the phase diagram of the zeroth Betti number for a single wheel with n=4 spokes as a function of the center angle and the spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 500) * DEG
+    spoke_angles = np.linspace(0, 360, 500) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            wheel = Wheel(center=(0, 0), scale=1.0, n=4, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 4)
+            wheel.calc_active_edges()
+            beta0_values[i, j] = wheel.beta0()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    c = ax.pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis', vmin=0, vmax=6)
+    fig.colorbar(c, ax=ax, label='$\\beta_0$')
+    ax.set_xlabel("Center angle $\\theta_C$ (degrees)")
+    ax.set_ylabel("Spoke angle (degrees)")
+    ax.set_title("Phase diagram of $\\beta_0$ for a single wheel")
+    if save: # save the figure to the figures directory if specified
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_phase_diagram.png"), dpi=300)
+
+def fig_4_phase_diagram(save=True):
+    '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
+    fig, axes = plt.subplots(2, 2, figsize=(25, 10))
+    theta_c_values = [DEG * i for i in [10, 45, 80, 90]]
+    for ax, angle in zip(axes.flatten(), theta_c_values):
+        ax.set_xlabel("NS spoke angle (degrees)")
+        ax.set_ylabel("EW spoke angle (degrees)")
+        ax.set_title("Phase diagram of $\\beta_1$ for a 3x3 grid with $\\theta_C = {}$°".format(angle / DEG))
+        NS_angles = np.linspace(0, 360, 500) * DEG
+        EW_angles = np.linspace(0, 360, 500) * DEG
+        NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
+        beta1_values = np.zeros_like(NS_grid, dtype=int)
+        for i in range(NS_grid.shape[0]):
+            for j in range(NS_grid.shape[1]):
+                grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[angle] + [NS_grid[i, j], EW_grid[i, j]] * 2)
+                grid.calculate_active_edges()
+                beta1_values[i, j] = grid.beta1()
+        max_beta1 = np.max(beta1_values)
+        min_beta1 = np.min(beta1_values)
+        c = ax.pcolormesh(NS_grid / DEG, EW_grid / DEG, beta1_values, shading='auto', cmap='viridis', vmin=min_beta1, vmax=max_beta1)
+        fig.colorbar(c, ax=ax, label='$\\beta_1$')
+    if save: # save the figure to the figures directory if specified
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_4_phase_diagram.png"), dpi=300)
+    
+def fig_5_phase_diagram(save=True):
+    '''Generate a figure showing sign of NS * sign of EW * delta E for a single wheel with n=4 spokes as a function of the center angle and the spoke angles. This is the quantity that determines whether the grid will have loops or not, since it determines whether the NS and EW edges can be active at the same time.'''
+    theta_c_values = np.linspace(0, 90.0, 200) * DEG
+    spoke_angles = np.linspace(0, 90.0, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    sign_product = np.zeros_like(Theta_C, dtype=float)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            theta_c = Theta_C[i, j]
+            spoke_angle = Spoke_Angle[i, j]
+            J_NS = frenkel_coupling(theta_c, spoke_angle, np.pi/2, 1)
+            J_EW = frenkel_coupling(theta_c, spoke_angle, 0, 1)
+            M = symmetric_block(theta_c, spoke_angle, K_s)
+            evals_sym = np.linalg.eigvalsh(M)
+            delta_E = float(evals_sym[1] - evals_sym[0])
+            sign_product[i, j] = float(np.sign(J_NS)) * float(np.sign(J_EW)) * delta_E
+
+    max_val = np.max(sign_product)
+    min_val = np.min(sign_product)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    c = ax.pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, sign_product, shading='auto', cmap='PRGn', vmin=min_val-1, vmax=max_val+1)
+    fig.colorbar(c, ax=ax, label='$sign(J_{NS}) \\cdot sign(J_{EW}) \\cdot \\Delta E$')
+    ax.set_xlabel("Center angle $\\theta_C$ (degrees)")
+    ax.set_ylabel("Spoke angle (degrees)")
+    ax.set_title("Phase diagram of $sign(J_{NS}) \\cdot sign(J_{EW}) \\cdot \\Delta E$ for a single wheel")
+    if save: # save the figure to the figures directory if specified
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_5_phase_diagram.png"), dpi=300)
+
 
 if __name__ == "__main__":
-    # # Example usage of the Wheel class
-    # wheel = Wheel(center=(0, 0), scale=1.0, n=4, angles=[DEG * 10]+[np.pi/4] * 4)
-    # print("Spoke positions:", wheel.spokes)
-    # print("Active edges:", wheel.active_edges)
-    # print("Calculating active edges based on angles...")
-    # wheel.calc_active_edges()
-    # print("Updated active edges:", wheel.active_edges)
-    # fig, ax = plt.subplots()
-    # wheel.render_wheel(ax, draw_dipoles=True)
-    # plt.savefig(os.path.join(FIGURES_DIR, "wheel_example.png"), dpi=300)
-
-    # #Test wheel grid now
-    # grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 45]+[np.pi/4] * 4)
-    # grid.calculate_active_edges()
-    # fig, ax = plt.subplots()
-    # grid.render_single_wheel(ax, row=1, col=1, draw_dipoles=True)
-    # plt.savefig(os.path.join(FIGURES_DIR, "wheel_grid_single.png"), dpi=300)
-    # fig, ax = plt.subplots()
-    # grid.render_grid(ax, draw_dipoles=True)
-    # plt.savefig(os.path.join(FIGURES_DIR, "wheel_grid_full.png"), dpi=300)
-    # print("Grid beta1:", grid.beta1())
-    fig1(save=True)
-    fig2(save=True)
+    # print("Generating figure 1...")
+    # fig1(save=True)
+    # print("Generating figure 2 mechanism...")
+    # fig2_mechanism(save=True)
+    # print("Generating figure 2 phase diagram...")
+    # fig_2_phase_diagram(save=True)
+    # print("Generating figure 4 phase diagram...")
+    # fig_4_phase_diagram(save=True)
+    print("Generating figure 5 phase diagram...")
+    fig_5_phase_diagram(save=True)

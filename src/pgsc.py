@@ -62,9 +62,10 @@ def frenkel_coupling(phi_i, phi_j, theta_ij, r_ij, mu=1.0):
     -------
     J : float
     """
+    first_term = np.cos(phi_i - phi_j)
+    second_term = -3.0 * np.cos(phi_i - theta_ij) * np.cos(phi_j - theta_ij)
     return (mu ** 2 / r_ij ** 3) * (
-        np.cos(phi_i - phi_j)
-        - 3.0 * np.cos(phi_i - theta_ij) * np.cos(phi_j - theta_ij)
+        first_term + second_term
     )
 
 
