@@ -2,7 +2,9 @@ import sys
 import os
 import numpy as np
 
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 
 import matplotlib
 matplotlib.use('Agg')   # headless rendering
@@ -40,9 +42,9 @@ from two_des import (
     symmetric_block,
 )
 
-from notebooks.fig_square import Wheel
+from fig_square import Wheel
 
-FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures')
+FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'hexagonal')
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 K_s = 1.0
@@ -101,9 +103,6 @@ class HexagonalWheelTiling:
         self.btwn_wheel_connections = btwn_wheel_connections
     
     def calculate_active_edges(self):
-        for row in self.wheels:
-            for wheel in row:
-                wheel.calc_active_edges()
         self.active_btwn_wheel_edges = []
         for (i1, j1, s1), (i2, j2, s2) in self.btwn_wheel_connections:
             wheel1 = self.wheels[i1][j1]
@@ -126,18 +125,205 @@ class HexagonalWheelTiling:
                 ax.plot([x1, x2], [y1, y2], color='#1a9850', linewidth=5)
             else:
                 ax.plot([x1, x2], [y1, y2], color='#EEEEEE', linewidth=3)
+    
+    def beta0(self):
+        '''Calculate the zeroth Betti number of the tiling based on active edges.'''
+        n_wheels = self.rows * self.cols
+        n_local = self.wheels[0][0].n + 1
+        total_nodes = n_wheels * n_local
 
+        adjacency = {node: set() for node in range(total_nodes)}
+
+        def global_id(r, c, local_id):
+            return (r * self.cols + c) * n_local + local_id
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                wheel = self.wheels[r][c]
+                for u, v in wheel.active_edges:
+                    gu = global_id(r, c, u)
+                    gv = global_id(r, c, v)
+                    adjacency[gu].add(gv)
+                    adjacency[gv].add(gu)
+
+        for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.active_btwn_wheel_edges:
+            gu = global_id(row1, col1, spoke1)
+            gv = global_id(row2, col2, spoke2)
+            adjacency[gu].add(gv)
+            adjacency[gv].add(gu)
+
+        visited = set()
+        components = 0
+
+        for node in range(total_nodes):
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency[current]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        return components
+    
+    def beta1(self):
+        e = len(self.active_btwn_wheel_edges) + sum(len(wheel.active_edges) for row in self.wheels for wheel in row)
+        c = self.beta0()
+        v = self.rows * self.cols * 4
+        return e - v + c
+
+
+def fig1(save=True):
+    '''Generate a figure showing three wheels, all with n=3 spokes and spoke angles 60 degrees, but with different center angles.'''
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    theta_C_values = [0, 90 * DEG, 180 * DEG]
+    for ax, theta_C in zip(axes, theta_C_values):
+        wheel = Wheel(center=(0, 0), scale=1.0, n=3, angles=[theta_C] + [60 * DEG] * 3)
+        wheel.render_wheel(ax, draw_dipoles=True)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title(f"$\\theta_C = {int(theta_C / DEG)}^\\circ$")
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_1_concept.png"), dpi=300)
+
+
+
+
+def fig2_mechanism_hexagonal(save=True):
+    '''Generate a figure showing 3 different 5x5 hexagonal grids with n=6 spokes and spoke angles 60 degrees, but with different center angles.'''
+    fig, axes = plt.subplots(2, 3, figsize=(30, 20))
+    wheel_grid1 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 0] + [60 * DEG] * 3)
+    wheel_grid2 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 90] + [60 * DEG] * 3)
+    wheel_grid3 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 180] + [60 * DEG] * 3)
+    wheel_grid1.calculate_active_edges()
+    wheel_grid2.calculate_active_edges()
+    wheel_grid3.calculate_active_edges()
+
+    for ax in axes[1]:
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+    wheel_grid1.render_grid(axes[1][0], draw_dipoles=True)
+    wheel_grid2.render_grid(axes[1][1], draw_dipoles=True)
+    wheel_grid3.render_grid(axes[1][2], draw_dipoles=True)
+    axes[1][0].set_title(f"Grid with $\\theta_C = 0$° \n$\\beta_1 = {wheel_grid1.beta1()}$")
+    axes[1][1].set_title(f"Grid with $\\theta_C = 90$° \n$\\beta_1 = {wheel_grid2.beta1()}$")
+    axes[1][2].set_title(f"Grid with $\\theta_C = 180$° \n$\\beta_1 = {wheel_grid3.beta1()}$")
+
+    theta_c_values = np.linspace(0, 180, 200) * DEG
+    J_values_axis1 = [frenkel_coupling(theta_c, 60 * DEG, 0, 1) for theta_c in theta_c_values]
+    J_values_axis2 = [frenkel_coupling(theta_c, 60 * DEG, 2 * np.pi / 3, 1) for theta_c in theta_c_values]
+    J_values_axis3 = [frenkel_coupling(theta_c, 60 * DEG, 4 * np.pi / 3, 1) for theta_c in theta_c_values]
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis1, color='blue')
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis2, color='orange')
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis3, color='green')
+    axes[0][0].axhline(0, color='gray', linestyle='--')
+    axes[0][0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][0].set_ylabel("$J / K_s$")
+    axes[0][0].set_title("Coupling strength vs. center angle for spoke axes")
+    axes[0][0].legend(["Axis 1", "Axis 2", "Axis 3"])
+
+    center_angles = np.linspace(0, 180, 200) * DEG
+    beta0_values = []
+    beta1_values = []
+    for theta_c in center_angles:
+        grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[theta_c] + [60 * DEG] * 3)
+        grid.calculate_active_edges()
+        beta0_values.append(grid.beta0())
+        beta1_values.append(grid.beta1())
+
+    axes[0][1].plot(center_angles / DEG, beta1_values, color='purple')
+    axes[0][1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][1].set_ylabel("Independent loops $\\beta_1$")
+    axes[0][1].set_title("Grid loop topology vs. center angle")
+    axes[0][1].set_ylim(0, max(beta1_values) + 1)
+
+    axes[0][2].plot(center_angles / DEG, beta0_values, color='green')
+    axes[0][2].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][2].set_ylabel("Connected components $\\beta_0$")
+    axes[0][2].set_title("Grid connectivity vs. center angle")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_2_mechanism.png"), dpi=300)
+
+def fig_2_phase_diagram_hexagonal(save=True):
+    '''Phase diagram of $\\beta_0$ and $\\beta_1$ for a single wheel (n=3) vs center and spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 200) * DEG
+    spoke_angles = np.linspace(0, 360, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            wheel = Wheel(center=(0, 0), scale=1.0, n=3, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 3)
+            beta0_values[i, j] = wheel.beta0()
+            beta1_values[i, j] = wheel.beta1()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis')
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a single 3-wheel")
+
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a single 3-wheel")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_2_phase_diagram.png"), dpi=300)
+
+def fig_2_5_phase_diagram_hexagonal(save=True):
+    '''Phase diagram of $\\beta_0$ and $\\beta_1$ for a 5x5 hexagonal grid vs center and spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 200) * DEG
+    spoke_angles = np.linspace(0, 360, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 3)
+            grid.calculate_active_edges()
+            beta0_values[i, j] = grid.beta0()
+            beta1_values[i, j] = grid.beta1()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis')
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a 5x5 hexagonal grid")
+
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a 5x5 hexagonal grid")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_2_5_phase_diagram.png"), dpi=300)
 
 
 if __name__ == "__main__":
-    tiling = HexagonalWheelTiling(rows=12, cols=6, separation=3.0, scale=1.0, angles = [60 * DEG] + [0] * 3)
-    tiling.calculate_active_edges()
-    fig, ax = plt.subplots(figsize=(10, 10))
-    tiling.render_grid(ax, draw_dipoles=True)
-    ax.set_aspect('equal')
-    ax.axis('off')
-    plt.tight_layout()
-    plt.savefig(os.path.join(FIGURES_DIR, 'hexagonal_wheel_tiling.png'), dpi=300)
+    print("Generating figure 1...")
+    fig1(save=True)
+    print("Generating figure 2 mechanism...")
+    fig2_mechanism_hexagonal(save=True)
+    print("Generating figure 2 phase diagram...")
+    fig_2_phase_diagram_hexagonal(save=True)
+    print("Generating figure 2.5 phase diagram...")
+    fig_2_5_phase_diagram_hexagonal(save=True)
+
 
 
 

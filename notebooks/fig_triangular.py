@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.dirname(__file__))
 
 import matplotlib
 matplotlib.use('Agg')   # headless rendering
@@ -40,9 +41,9 @@ from two_des import (
     symmetric_block,
 )
 
-from notebooks.fig_square import Wheel
+from fig_square import Wheel
 
-FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures')
+FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'triangular')
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 K_s = 1.0
@@ -88,9 +89,6 @@ class TriangleWheelTiling:
         self.active_btwn_wheel_edges = []
     
     def calculate_active_edges(self):
-        for i in self.wheels:
-            for wheel in i:
-                wheel.calc_active_edges()
         self.active_btwn_wheel_edges = []
         for (i1, j1, s1), (i2, j2, s2) in self.btwn_wheel_connections:
             wheel1 = self.wheels[i1][j1]
@@ -171,7 +169,6 @@ def fig1(save=True):
     theta_C_values = [0, 60 * DEG, 120 * DEG]
     for ax, theta_C in zip(axes, theta_C_values):
         wheel = Wheel(center=(0, 0), scale=1.0, n=6, angles=[theta_C] + [30 * DEG] * 6)
-        wheel.calc_active_edges()
         wheel.render_wheel(ax, draw_dipoles=True)
         ax.set_aspect('equal')
         ax.axis('off')
@@ -253,7 +250,6 @@ def fig_2_phase_diagram_triangular(save=True):
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             wheel = Wheel(center=(0, 0), scale=1.0, n=6, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 6)
-            wheel.calc_active_edges()
             beta0_values[i, j] = wheel.beta0()
             beta1_values[i, j] = wheel.beta1()
 

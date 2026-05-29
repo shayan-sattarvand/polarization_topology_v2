@@ -40,14 +40,14 @@ from two_des import (
     symmetric_block,
 )
 
-FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures')
+FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'square')
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 K_s = 1.0
 
 
 class Wheel: 
-    def __init__(self, center, scale, n=4, active_edges=None, angles = None, offset = 0):
+    def __init__(self, center, scale, n=4, angles = None, offset = 0):
         '''Class representing a wheel graph with n spokes. The center is at `center`, 
         the radius is `scale`, and the angles of the center + spokes can be specified by `angles`.
         If `active_edges` is provided, only those edges will be considered active; otherwise, all 
@@ -66,28 +66,24 @@ class Wheel:
         ])
         self.spoke_angles = angles.copy()
         self.spoke_angles.pop(0) # remove the first angle, which is for the center node
-        self.all_edges = [(0, i) for i in range(1, n+1)] + [(i, (i % n) + 1) for i in range(1, n+1)]
-        if active_edges is None:
-            self.active_edges = self.all_edges
-        else:
-            self.active_edges = active_edges
-        self.center_angle = angles[0]
-
-    def calc_active_edges(self):
-        '''Calculate the active edges based on the angles. Edges are active if coupling is negative.'''
         active_edges = []
+        all_edges = []
         center_angle = self.center_angle
         for i in range(self.n): # between center and spokes
             phi_j = self.spoke_angles[i]
             J = frenkel_coupling(center_angle, phi_j, self.angle_step * i, 1)
+            all_edges.append((0, i + 1, J))
             if J < 0:
                 active_edges.append((0, i + 1))
         for i in range(self.n): # between adjacent spokes
             theta_ij = np.arctan2(self.spokes[(i+1)%self.n][1] - self.spokes[i][1], self.spokes[(i+1)%self.n][0] - self.spokes[i][0])
             J = frenkel_coupling(self.spoke_angles[i], self.spoke_angles[(i + 1) % self.n], theta_ij, 1)
+            all_edges.append((i + 1, (i + 1) % self.n + 1, J))
             if J < 0:
                 active_edges.append((i + 1, (i + 1) % self.n + 1))
         self.active_edges = active_edges
+        self.all_edges = all_edges
+        self.center_angle = angles[0]
 
     def render_wheel(self, ax, draw_dipoles=False):
         '''Render the wheel graph on the given matplotlib axis `ax`. Active edges are colored green, while inactive edges are colored gray.'''
@@ -173,9 +169,6 @@ class SquareWheelGrid:
     
     def calculate_active_edges(self):
         '''Calculate the active edges for all wheels in the grid.'''
-        for row in self.wheels:
-            for wheel in row:
-                wheel.calc_active_edges()
         for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.btwn_wheel_connections:
             wheel1 = self.wheels[row1][col1]
             wheel2 = self.wheels[row2][col2]
@@ -265,9 +258,6 @@ def fig1(save=True):
     wheel1 = Wheel(center=(0, 0), scale=1.0, n=4, angles=[DEG * 10]+[np.pi/4] * 4) # center angle 10 degrees
     wheel2 = Wheel(center=(0, 0), scale=1.0, n=4, angles=[DEG * 45]+[np.pi/4] * 4) # center angle 45 degrees
     wheel3 = Wheel(center=(0, 0), scale=1.0, n=4, angles=[DEG * 80]+[np.pi/4] * 4) # center angle 80 degrees
-    wheel1.calc_active_edges() # calculate active edges for each
-    wheel2.calc_active_edges()
-    wheel3.calc_active_edges()
     for ax in axes: #set limits and aspect ratio for each subplot
         ax.set_xlim(-2, 2)
         ax.set_ylim(-2, 2)
@@ -362,7 +352,6 @@ def fig_2_phase_diagram(save=True):
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             wheel = Wheel(center=(0, 0), scale=1.0, n=4, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 4)
-            wheel.calc_active_edges()
             beta0_values[i, j] = wheel.beta0()
             beta1_values[i, j] = wheel.beta1()
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -418,8 +407,8 @@ def fig_4_phase_diagram(save=True):
         ax.set_xlabel("NS spoke angle (degrees)")
         ax.set_ylabel("EW spoke angle (degrees)")
         ax.set_title("Phase diagram of $\\beta_1$ for a 3x3 grid with $\\theta_C = {}$°".format(angle / DEG))
-        NS_angles = np.linspace(0, 360, 500) * DEG
-        EW_angles = np.linspace(0, 360, 500) * DEG
+        NS_angles = np.linspace(0, 360, 200) * DEG
+        EW_angles = np.linspace(0, 360, 200) * DEG
         NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
         beta1_values = np.zeros_like(NS_grid, dtype=int)
         for i in range(NS_grid.shape[0]):
@@ -465,15 +454,15 @@ def fig_5_phase_diagram(save=True):
 
 
 if __name__ == "__main__":
-    # print("Generating figure 1...")
-    # fig1(save=True)
-    # print("Generating figure 2 mechanism...")
-    # fig2_mechanism(save=True)
-    # print("Generating figure 2 phase diagram...")
-    # fig_2_phase_diagram(save=True)
-    print("Generating figure 2.5 phase diagram...")
-    fig_2_5_phase_diagram(save=True)
-    # print("Generating figure 4 phase diagram...")
-    # fig_4_phase_diagram(save=True)
-    # print("Generating figure 5 phase diagram...")
-    # fig_5_phase_diagram(save=True)
+    print("Generating figure 1...")
+    fig1(save=True)
+    print("Generating figure 2 mechanism...")
+    fig2_mechanism(save=True)
+    print("Generating figure 2 phase diagram...")
+    fig_2_phase_diagram(save=True)
+    # print("Generating figure 2.5 phase diagram...")
+    # fig_2_5_phase_diagram(save=True)
+    print("Generating figure 4 phase diagram...")
+    fig_4_phase_diagram(save=True)
+    print("Generating figure 5 phase diagram...")
+    fig_5_phase_diagram(save=True)
