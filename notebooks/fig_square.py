@@ -65,13 +65,12 @@ class Wheel:
             for angle in self.theta_ij
         ])
         self.spoke_angles = angles.copy()
-        self.spoke_angles.pop(0) # remove the first angle, which is for the center node
+        self.center_angle = self.spoke_angles.pop(0) # remove the first angle, which is for the center node
         active_edges = []
         all_edges = []
-        center_angle = self.center_angle
         for i in range(self.n): # between center and spokes
             phi_j = self.spoke_angles[i]
-            J = frenkel_coupling(center_angle, phi_j, self.angle_step * i, 1)
+            J = frenkel_coupling(self.center_angle, phi_j, self.angle_step * i, 1)
             all_edges.append((0, i + 1, J))
             if J < 0:
                 active_edges.append((0, i + 1))
@@ -83,23 +82,23 @@ class Wheel:
                 active_edges.append((i + 1, (i + 1) % self.n + 1))
         self.active_edges = active_edges
         self.all_edges = all_edges
-        self.center_angle = angles[0]
+        
 
     def render_wheel(self, ax, draw_dipoles=False):
         '''Render the wheel graph on the given matplotlib axis `ax`. Active edges are colored green, while inactive edges are colored gray.'''
-        for edge in self.all_edges:
-            if edge in self.active_edges:
+        for (i, j, _) in self.all_edges:
+            if (i, j) in self.active_edges:
                 color = '#1a9850'  # bright green
                 linewidth = 3
             else:
                 color = '#EEEEEE'  # light gray
                 linewidth = 1
-            if edge[0] == 0:  # spoke edge
+            if (i, j)[0] == 0:  # spoke edge
                 start = self.center
-                end = self.spokes[edge[1] - 1]
+                end = self.spokes[(i, j)[1] - 1]
             else:  # rim edge
-                start = self.spokes[edge[0] - 1]
-                end = self.spokes[edge[1] - 1]
+                start = self.spokes[(i, j)[0] - 1]
+                end = self.spokes[(i, j)[1] - 1]
             ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
         ax.scatter(*self.center, color='blue', s=100, zorder=3)  # center node
         ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=100, zorder=3)  # spoke nodes
