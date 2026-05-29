@@ -71,48 +71,74 @@ class HexagonalWheelTiling:
         # Create edges between adjacent wheels
         # First: the horizontal edges
         btwn_wheel_connections = []
+        self.active_btwn_wheel_edges = []
         for i in range(rows):
             for j in range(cols // 2):
                 if (i%2) == 0:
                     if 2 * j + 2 > cols - 1:
                         continue
+                    
+                    wheel1 = self.wheels[i][2 * j + 1]
+                    wheel2 = self.wheels[i][2 * j + 2]
+                    phi1 = wheel1.spoke_angles[0]
+                    phi2 = wheel2.spoke_angles[1]
+                    theta_ij = np.arctan2(wheel2.spokes[1][1] - wheel1.spokes[0][1], wheel2.spokes[1][0] - wheel1.spokes[0][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, 2 * j + 1, 1), (i, 2 * j + 2, 2)))
                     btwn_wheel_connections.append((
                         (i, 2 * j + 1, 1),  # wheel on the left
-                        (i, 2 * j + 2, 2)   # wheel on the right
+                        (i, 2 * j + 2, 2),   # wheel on the right
+                        J
                     ))
                 if (i%2) == 1:
                     if 2 * j + 1 > cols - 1:
                         continue
+                    wheel1 = self.wheels[i][2 * j]
+                    wheel2 = self.wheels[i][2 * j + 1]
+                    phi1 = wheel1.spoke_angles[0]
+                    phi2 = wheel2.spoke_angles[1]
+                    theta_ij = np.arctan2(wheel2.spokes[1][1] - wheel1.spokes[0][1], wheel2.spokes[1][0] - wheel1.spokes[0][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, 2 * j, 1), (i, 2 * j + 1, 2)))
                     btwn_wheel_connections.append((
                         (i, 2 * j, 1),      # wheel on the left
-                        (i, 2 * j + 1, 2)   # wheel on the right
+                        (i, 2 * j + 1, 2),   # wheel on the right
+                        J
                     ))
         #Next: the vertical edges
         for i in range(rows - 1):
             for j in range(cols):
                 if (i+j)%2 == 0:
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j]
+                    phi1 = wheel1.spoke_angles[0]
+                    phi2 = wheel2.spoke_angles[2]
+                    theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[0][1], wheel2.spokes[2][0] - wheel1.spokes[0][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 1), (i + 1, j, 3)))
                     btwn_wheel_connections.append((
                         (i, j, 1),          # wheel on the top
-                        (i + 1, j, 3)       # wheel on the bottom
+                        (i + 1, j, 3),       # wheel on the bottom
+                        J
                     ))
                 if (i+j)%2 == 1:
                     btwn_wheel_connections.append((
                         (i, j, 2),          # wheel on the top
-                        (i + 1, j, 3)   # wheel on the bottom
+                        (i + 1, j, 3),   # wheel on the bottom
+                        J
                     ))
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j]
+                    phi1 = wheel1.spoke_angles[1]
+                    phi2 = wheel2.spoke_angles[2]
+                    theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[1][1], wheel2.spokes[2][0] - wheel1.spokes[1][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 3)))
         self.btwn_wheel_connections = btwn_wheel_connections
-    
-    def calculate_active_edges(self):
-        self.active_btwn_wheel_edges = []
-        for (i1, j1, s1), (i2, j2, s2) in self.btwn_wheel_connections:
-            wheel1 = self.wheels[i1][j1]
-            wheel2 = self.wheels[i2][j2]
-            phi1 = wheel1.spoke_angles[s1 - 1]
-            phi2 = wheel2.spoke_angles[s2 - 1]
-            theta_ij = np.arctan2(wheel2.spokes[s2 - 1][1] - wheel1.spokes[s1 - 1][1], wheel2.spokes[s2 - 1][0] - wheel1.spokes[s1 - 1][0])
-            J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-            if J < 0:
-                self.active_btwn_wheel_edges.append(((i1, j1, s1), (i2, j2, s2)))
     
     def render_grid(self, ax, draw_dipoles=False):
         for i in self.wheels:
@@ -201,9 +227,6 @@ def fig2_mechanism_hexagonal(save=True):
     wheel_grid1 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 0] + [60 * DEG] * 3)
     wheel_grid2 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 90] + [60 * DEG] * 3)
     wheel_grid3 = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 180] + [60 * DEG] * 3)
-    wheel_grid1.calculate_active_edges()
-    wheel_grid2.calculate_active_edges()
-    wheel_grid3.calculate_active_edges()
 
     for ax in axes[1]:
         ax.set_aspect('equal')
@@ -234,7 +257,6 @@ def fig2_mechanism_hexagonal(save=True):
     beta1_values = []
     for theta_c in center_angles:
         grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[theta_c] + [60 * DEG] * 3)
-        grid.calculate_active_edges()
         beta0_values.append(grid.beta0())
         beta1_values.append(grid.beta1())
 
@@ -293,7 +315,6 @@ def fig_2_5_phase_diagram_hexagonal(save=True):
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 3)
-            grid.calculate_active_edges()
             beta0_values[i, j] = grid.beta0()
             beta1_values[i, j] = grid.beta1()
 

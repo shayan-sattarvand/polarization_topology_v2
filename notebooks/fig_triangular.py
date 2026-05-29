@@ -63,42 +63,71 @@ class TriangleWheelTiling:
                 row.append(wheel)
             self.wheels.append(row)
         btwn_wheel_connections = []
+        self.active_btwn_wheel_edges = []
         # Horizontal first
         for i in range(rows):
             for j in range(cols - 1):
-                btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 4)))  # connect spoke 1 of wheel (i, j) to spoke 4 of wheel (i, j + 1)
+                wheel1 = self.wheels[i][j]
+                wheel2 = self.wheels[i][j + 1]
+                phi1 = wheel1.spoke_angles[0]
+                phi2 = wheel2.spoke_angles[3]
+                theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[0][1], wheel2.spokes[3][0] - wheel1.spokes[0][0])
+                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                if J < 0:
+                    self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 4)))
+                btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 4), J))  # connect spoke 1 of wheel (i, j) to spoke 4 of wheel (i, j + 1)
         # Then diagonal right-up
         for i in range(rows - 1):
             for j in range(cols):
                 if i % 2 == 1 and j == cols - 1:
                     continue  # skip rightmost column for odd rows
                 if i% 2 == 0:
-                    btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 5)))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j]
+                    phi1 = wheel1.spoke_angles[1]
+                    phi2 = wheel2.spoke_angles[4]
+                    theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 5)))
+                    btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 5), J))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
                 else:
-                    btwn_wheel_connections.append(((i, j, 2), (i + 1, j + 1, 5)))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j + 1]
+                    phi1 = wheel1.spoke_angles[1]
+                    phi2 = wheel2.spoke_angles[4]
+                    theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j + 1, 5)))
+                    btwn_wheel_connections.append(((i, j, 2), (i + 1, j + 1, 5), J))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
         # Then diagonal left-up
         for i in range(rows - 1):
             for j in range(cols):
                 if i % 2 == 0 and j == 0:
                     continue  # skip leftmost column for even rows
                 if i% 2 == 0:
-                    btwn_wheel_connections.append(((i, j, 3), (i + 1, j - 1, 6)))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j - 1]
+                    phi1 = wheel1.spoke_angles[2]
+                    phi2 = wheel2.spoke_angles[5]
+                    theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j - 1, 6)))
+                    btwn_wheel_connections.append(((i, j, 3), (i + 1, j - 1, 6), J))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
                 else:
-                    btwn_wheel_connections.append(((i, j, 3), (i + 1, j, 6)))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
+                    wheel1 = self.wheels[i][j]
+                    wheel2 = self.wheels[i + 1][j]
+                    phi1 = wheel1.spoke_angles[2]
+                    phi2 = wheel2.spoke_angles[5]
+                    theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
+                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j, 6)))
+                    btwn_wheel_connections.append(((i, j, 3), (i + 1, j, 6), J))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
         self.btwn_wheel_connections = btwn_wheel_connections
-        self.active_btwn_wheel_edges = []
-    
-    def calculate_active_edges(self):
-        self.active_btwn_wheel_edges = []
-        for (i1, j1, s1), (i2, j2, s2) in self.btwn_wheel_connections:
-            wheel1 = self.wheels[i1][j1]
-            wheel2 = self.wheels[i2][j2]
-            phi1 = wheel1.spoke_angles[s1 - 1]
-            phi2 = wheel2.spoke_angles[s2 - 1]
-            theta_ij = np.arctan2(wheel2.spokes[s2 - 1][1] - wheel1.spokes[s1 - 1][1], wheel2.spokes[s2 - 1][0] - wheel1.spokes[s1 - 1][0])
-            J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-            if J < 0:
-                self.active_btwn_wheel_edges.append(((i1, j1, s1), (i2, j2, s2)))
+
     
     def render_grid(self, ax, draw_dipoles=False):
         for i in self.wheels:
@@ -186,9 +215,6 @@ def fig2_mechanism_triangular(save=True):
     wheel_grid1 = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 0] + [30 * DEG] * 6)
     wheel_grid2 = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 50] + [30 * DEG] * 6)
     wheel_grid3 = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 100] + [30 * DEG] * 6)
-    wheel_grid1.calculate_active_edges()
-    wheel_grid2.calculate_active_edges()
-    wheel_grid3.calculate_active_edges()
 
     for ax in axes[1]:
         ax.set_aspect('equal')
@@ -218,7 +244,6 @@ def fig2_mechanism_triangular(save=True):
     beta1_values = []
     for theta_c in center_angles:
         grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [30 * DEG] * 6)
-        grid.calculate_active_edges()
         beta1_values.append(grid.beta1())
     axes[0][1].plot(center_angles / DEG, beta1_values, color='purple')
     axes[0][1].set_xlabel("Center angle $\\theta_C$ (degrees)")
@@ -229,7 +254,6 @@ def fig2_mechanism_triangular(save=True):
     beta0_values = []
     for theta_c in center_angles:
         grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [30 * DEG] * 6)
-        grid.calculate_active_edges()
         beta0_values.append(grid.beta0())
     axes[0][2].plot(center_angles / DEG, beta0_values, color='green')
     axes[0][2].set_xlabel("Center angle $\\theta_C$ (degrees)")
@@ -280,7 +304,6 @@ def fig_2_5_phase_diagram_triangular(save=True):
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 6)
-            grid.calculate_active_edges()
             beta0_values[i, j] = grid.beta0()
             beta1_values[i, j] = grid.beta1()
 
@@ -302,7 +325,6 @@ def fig_2_5_phase_diagram_triangular(save=True):
 
 if __name__ == "__main__":
     # tiling = TriangleWheelTiling(rows=6, cols=6, separation=3.0, scale=1.0, angles=[240 * DEG] + [30 * DEG] * 6)
-    # tiling.calculate_active_edges()
     # print("Beta0:", tiling.beta0())
     # print("Beta1:", tiling.beta1())
     # fig, ax = plt.subplots(figsize=(10, 10))
