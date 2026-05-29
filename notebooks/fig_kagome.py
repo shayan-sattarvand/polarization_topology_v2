@@ -55,7 +55,7 @@ def kagome_map(x, y, scale):
     s = y % 3
     n = (y - s) // 3
 
-    # horizontal row shear, but wrapped every 2 triangular rows
+    # horizontal row shear, but wrapped every 2 Kagome rows
     p = n % 2
 
     bx = (7*s - 3*s*s) / 4
@@ -267,16 +267,150 @@ class KagomeWheelTiling:
         v = self.rows * self.cols * 7
         return e - v + c
 
+
+def fig1(save=True):
+    '''Generate a figure showing three wheels, all with n=6 spokes and spoke angles 30 degrees, but with different center angles.'''
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    theta_C_values = [0, 60 * DEG, 120 * DEG]
+    for ax, theta_C in zip(axes, theta_C_values):
+        wheel = Wheel(center=(0, 0), scale=1.0, n=6, angles=[theta_C] + [30 * DEG] * 6)
+        wheel.render_wheel(ax, draw_dipoles=True)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title(f"$\\theta_C = {int(theta_C / DEG)}^\\circ$")
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_1_concept.png"), dpi=300)
+
+
+
+
+def fig2_mechanism_kagome(save=True):
+    '''Generate a figure showing 3 different 6x3 Kagome grids with n=6 spokes and spoke angles 30 degrees, but with different center angles.'''
+    fig, axes = plt.subplots(2, 3, figsize=(15, 12))
+    wheel_grid1 = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[DEG * 0] + [30 * DEG] * 6)
+    wheel_grid2 = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[DEG * 50] + [30 * DEG] * 6)
+    wheel_grid3 = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[DEG * 100] + [30 * DEG] * 6)
+
+    for ax in axes[1]:
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+    wheel_grid1.render_grid(axes[1][0], draw_dipoles=True)
+    wheel_grid2.render_grid(axes[1][1], draw_dipoles=True)
+    wheel_grid3.render_grid(axes[1][2], draw_dipoles=True)
+    axes[1][0].set_title(f"Grid with $\\theta_C = 0$° \n$\\beta_1 = {wheel_grid1.beta1()}$")
+    axes[1][1].set_title(f"Grid with $\\theta_C = 50$° \n$\\beta_1 = {wheel_grid2.beta1()}$")
+    axes[1][2].set_title(f"Grid with $\\theta_C = 100$° \n$\\beta_1 = {wheel_grid3.beta1()}$")
+
+    theta_c_values = np.linspace(0, 180, 200) * DEG
+    J_values_axis1 = [frenkel_coupling(theta_c, 30 * DEG, 0, 1) for theta_c in theta_c_values]
+    J_values_axis2 = [frenkel_coupling(theta_c, 30 * DEG, 2 * np.pi / 3, 1) for theta_c in theta_c_values]
+    J_values_axis3 = [frenkel_coupling(theta_c, 30 * DEG, 4 * np.pi / 3, 1) for theta_c in theta_c_values]
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis1, color='blue')
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis2, color='orange')
+    axes[0][0].plot(theta_c_values / DEG, J_values_axis3, color='green')
+    axes[0][0].axhline(0, color='gray', linestyle='--')
+    axes[0][0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][0].set_ylabel("$J / K_s$")
+    axes[0][0].set_title("Coupling strength vs. center angle for spoke axes")
+    axes[0][0].legend(["Axis 1", "Axis 2", "Axis 3"])
+
+    center_angles = np.linspace(0, 180, 200) * DEG
+    beta1_values = []
+    for theta_c in center_angles:
+        grid = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [30 * DEG] * 6)
+        beta1_values.append(grid.beta1())
+    axes[0][1].plot(center_angles / DEG, beta1_values, color='purple')
+    axes[0][1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][1].set_ylabel("Independent loops $\\beta_1$")
+    axes[0][1].set_title("Grid loop topology vs. center angle")
+    axes[0][1].set_ylim(0, max(beta1_values) + 1)
+
+    beta0_values = []
+    for theta_c in center_angles:
+        grid = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [30 * DEG] * 6)
+        beta0_values.append(grid.beta0())
+    axes[0][2].plot(center_angles / DEG, beta0_values, color='green')
+    axes[0][2].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0][2].set_ylabel("Connected components $\\beta_0$")
+    axes[0][2].set_title("Grid connectivity vs. center angle")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_mechanism.png"), dpi=300)
+
+def fig_2_phase_diagram_kagome(save=True):
+    '''Phase diagram of $\\beta_0$ and $\\beta_1$ for a single wheel (n=6) vs center and spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 200) * DEG
+    spoke_angles = np.linspace(0, 360, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            wheel = Wheel(center=(0, 0), scale=1.0, n=6, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 6)
+            beta0_values[i, j] = wheel.beta0()
+            beta1_values[i, j] = wheel.beta1()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis')
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a single 6-wheel")
+
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a single 6-wheel")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_phase_diagram.png"), dpi=300)
+
+def fig_2_5_phase_diagram_kagome(save=True):
+    '''Phase diagram of $\\beta_0$ and $\\beta_1$ for a 6x3 Kagome grid vs center and spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 200) * DEG
+    spoke_angles = np.linspace(0, 360, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            grid = KagomeWheelTiling(rows=6, cols=3, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 6)
+            beta0_values[i, j] = grid.beta0()
+            beta1_values[i, j] = grid.beta1()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis')
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a 6x3 Kagome grid")
+
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a 6x3 Kagome grid")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_5_phase_diagram.png"), dpi=300)
+
+
+
+
 if __name__ == "__main__":
-    tiling = KagomeWheelTiling(rows=6, cols=6, separation=3.0, scale=1.0, angles=[240 * DEG] + [30 * DEG] * 6)
-    print("Beta0:", tiling.beta0())
-    print("Beta1:", tiling.beta1())
-    fig, ax = plt.subplots(figsize=(10, 10))
-    tiling.render_grid(ax, draw_dipoles=True)
-    ax.set_aspect('equal')
-    ax.axis('off')
-    plt.title("Kagome wheel tiling with active edges in green")
-    plt.savefig(os.path.join(FIGURES_DIR, 'kagome_wheel_tiling.png'), dpi=300)
+    print("Generating Fig 1...")
+    fig1()
+    print("Generating Fig 2 mechanism...")
+    fig2_mechanism_kagome()
+    print("Generating Fig 2 phase diagram...")
+    fig_2_phase_diagram_kagome()
+    print("Generating Fig 2.5 phase diagram...")
+    fig_2_5_phase_diagram_kagome()
 
 
 
