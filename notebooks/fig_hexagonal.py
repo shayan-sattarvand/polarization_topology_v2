@@ -40,7 +40,7 @@ from two_des import (
     symmetric_block,
 )
 
-from fig_paper1 import Wheel
+from notebooks.fig_square import Wheel
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures')
 os.makedirs(FIGURES_DIR, exist_ok=True)
