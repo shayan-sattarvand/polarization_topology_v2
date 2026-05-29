@@ -84,7 +84,7 @@ class Wheel:
         self.all_edges = all_edges
         
 
-    def render_wheel(self, ax, draw_dipoles=False):
+    def render_wheel(self, ax, draw_dipoles=False, node_size=100):
         '''Render the wheel graph on the given matplotlib axis `ax`. Active edges are colored green, while inactive edges are colored gray.'''
         for (i, j, _) in self.all_edges:
             if (i, j) in self.active_edges:
@@ -100,8 +100,8 @@ class Wheel:
                 start = self.spokes[(i, j)[0] - 1]
                 end = self.spokes[(i, j)[1] - 1]
             ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
-        ax.scatter(*self.center, color='blue', s=100, zorder=3)  # center node
-        ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=100, zorder=3)  # spoke nodes
+        ax.scatter(*self.center, color='blue', s=node_size, zorder=3)  # center node
+        ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=node_size, zorder=3)  # spoke nodes
         if draw_dipoles:
             for i in range(self.n):
                 angle = self.spoke_angles[i]
