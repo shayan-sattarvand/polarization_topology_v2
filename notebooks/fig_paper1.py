@@ -47,7 +47,7 @@ K_s = 1.0
 
 
 class Wheel: 
-    def __init__(self, center, scale, n=4, active_edges=None, angles = None):
+    def __init__(self, center, scale, n=4, active_edges=None, angles = None, offset = 0):
         '''Class representing a wheel graph with n spokes. The center is at `center`, 
         the radius is `scale`, and the angles of the center + spokes can be specified by `angles`.
         If `active_edges` is provided, only those edges will be considered active; otherwise, all 
@@ -57,10 +57,11 @@ class Wheel:
         self.n = n
         self.radius = scale
         self.angle_step = 2 * np.pi / n
+        self.offset = offset
         self.theta_ij = list(np.arange(n) * self.angle_step)
         self.spokes = np.array([
-            (center[0] + self.radius * np.cos(angle), 
-             center[1] + self.radius * np.sin(angle))
+            (center[0] + self.radius * np.cos(angle + self.offset), 
+             center[1] + self.radius * np.sin(angle + self.offset))
             for angle in self.theta_ij
         ])
         self.spoke_angles = angles.copy()
@@ -352,24 +353,62 @@ def fig2_mechanism(save=True):
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_mechanism.png"), dpi=300)
 
 def fig_2_phase_diagram(save=True):
-    '''Generate a figure showing the phase diagram of the zeroth Betti number for a single wheel with n=4 spokes as a function of the center angle and the spoke angles.'''
+    '''Generate a figure showing the phase diagram of the zeroth and first Betti numbers for a single wheel with n=4 spokes as a function of the center angle and the spoke angles.'''
     theta_c_values = np.linspace(0, 360, 500) * DEG
     spoke_angles = np.linspace(0, 360, 500) * DEG
     Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
     beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             wheel = Wheel(center=(0, 0), scale=1.0, n=4, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 4)
             wheel.calc_active_edges()
             beta0_values[i, j] = wheel.beta0()
-    fig, ax = plt.subplots(figsize=(8, 6))
-    c = ax.pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis', vmin=0, vmax=6)
-    fig.colorbar(c, ax=ax, label='$\\beta_0$')
-    ax.set_xlabel("Center angle $\\theta_C$ (degrees)")
-    ax.set_ylabel("Spoke angle (degrees)")
-    ax.set_title("Phase diagram of $\\beta_0$ for a single wheel")
+            beta1_values[i, j] = wheel.beta1()
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis', vmin=0, vmax=6)
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a single wheel")
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a single wheel")
     if save: # save the figure to the figures directory if specified
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_phase_diagram.png"), dpi=300)
+
+def fig_2_5_phase_diagram(save=True):
+    '''Phase diagram of $\\beta_0$ and $\\beta_1$ for a 3x3 grid vs center and spoke angles.'''
+    theta_c_values = np.linspace(0, 360, 200) * DEG
+    spoke_angles = np.linspace(0, 360, 200) * DEG
+    Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
+    beta0_values = np.zeros_like(Theta_C, dtype=int)
+    beta1_values = np.zeros_like(Theta_C, dtype=int)
+
+    for i in range(Theta_C.shape[0]):
+        for j in range(Theta_C.shape[1]):
+            grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 4)
+            grid.calculate_active_edges()
+            beta0_values[i, j] = grid.beta0()
+            beta1_values[i, j] = grid.beta1()
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    c0 = axes[0].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta0_values, shading='auto', cmap='viridis')
+    fig.colorbar(c0, ax=axes[0], label='$\\beta_0$')
+    axes[0].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[0].set_ylabel("Spoke angle (degrees)")
+    axes[0].set_title("Phase diagram of $\\beta_0$ for a 3x3 grid")
+
+    c1 = axes[1].pcolormesh(Theta_C / DEG, Spoke_Angle / DEG, beta1_values, shading='auto', cmap='viridis')
+    fig.colorbar(c1, ax=axes[1], label='$\\beta_1$')
+    axes[1].set_xlabel("Center angle $\\theta_C$ (degrees)")
+    axes[1].set_ylabel("Spoke angle (degrees)")
+    axes[1].set_title("Phase diagram of $\\beta_1$ for a 3x3 grid")
+
+    if save:
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_5_phase_diagram.png"), dpi=300)
 
 def fig_4_phase_diagram(save=True):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
@@ -432,7 +471,9 @@ if __name__ == "__main__":
     # fig2_mechanism(save=True)
     # print("Generating figure 2 phase diagram...")
     # fig_2_phase_diagram(save=True)
+    print("Generating figure 2.5 phase diagram...")
+    fig_2_5_phase_diagram(save=True)
     # print("Generating figure 4 phase diagram...")
     # fig_4_phase_diagram(save=True)
-    print("Generating figure 5 phase diagram...")
-    fig_5_phase_diagram(save=True)
+    # print("Generating figure 5 phase diagram...")
+    # fig_5_phase_diagram(save=True)
