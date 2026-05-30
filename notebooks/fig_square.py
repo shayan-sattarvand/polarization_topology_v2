@@ -155,34 +155,40 @@ class SquareWheelGrid:
                 row.append(wheel)
             self.wheels.append(row)
         btwn_wheel_connections = []
+        self.active_btwn_wheel_edges = []
         # Horizontal first
         for i in range(rows):
             for j in range(cols - 1):
-                btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
+                wheel1 = self.wheels[i][j]
+                wheel2 = self.wheels[i][j + 1]
+                phi1 = wheel1.spoke_angles[0]  # spoke 1 of wheel 1
+                phi2 = wheel2.spoke_angles[2]  # spoke 3 of wheel 2
+                theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[0][1], wheel2.spokes[2][0] - wheel1.spokes[0][0])
+                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                if J < 0:
+                    self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
+                btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 3), J))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
         # Then vertical
         for i in range(rows - 1):
             for j in range(cols):
-                btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
+                wheel1 = self.wheels[i][j]
+                wheel2 = self.wheels[i + 1][j]
+                phi1 = wheel1.spoke_angles[1]  # spoke 2 of wheel 1
+                phi2 = wheel2.spoke_angles[3]  # spoke 4 of wheel 2
+                theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[1][1], wheel2.spokes[3][0] - wheel1.spokes[1][0])
+                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                if J < 0:
+                    self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
+                btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 4), J))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
         self.btwn_wheel_connections = btwn_wheel_connections
-        self.active_btwn_wheel_edges = []
-    
-    def calculate_active_edges(self):
-        '''Calculate the active edges for all wheels in the grid.'''
-        for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.btwn_wheel_connections:
-            wheel1 = self.wheels[row1][col1]
-            wheel2 = self.wheels[row2][col2]
-            angle1 = wheel1.spoke_angles[spoke1-1]
-            angle2 = wheel2.spoke_angles[spoke2-1]
-            J = frenkel_coupling(angle1, angle2, np.arctan2(wheel2.spokes[spoke2 - 1][0] - wheel1.spokes[spoke1 - 1][0], wheel2.spokes[spoke2 - 1][1] - wheel1.spokes[spoke1 - 1][1]), 1)
-            if J < 0:
-                self.active_btwn_wheel_edges.append(((row1, col1, spoke1), (row2, col2, spoke2)))
+
     
     def render_grid(self, ax, draw_dipoles=False):
         '''Render the grid of wheels on the given matplotlib axis `ax`.'''
         for row in self.wheels:
             for wheel in row:
                 wheel.render_wheel(ax, draw_dipoles=draw_dipoles)
-        for ((row1, col1, spoke1), (row2, col2, spoke2)) in self.btwn_wheel_connections:
+        for ((row1, col1, spoke1), (row2, col2, spoke2), _) in self.btwn_wheel_connections:
             wheel1 = self.wheels[row1][col1]
             wheel2 = self.wheels[row2][col2]
             start = wheel1.spokes[spoke1 - 1]
@@ -277,9 +283,6 @@ def fig2_mechanism(save=True):
     wheel_grid1 = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 10]+[np.pi/4] * 4) # center angle 10 degrees
     wheel_grid2 = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 45]+[np.pi/4] * 4) # center angle 45 degrees
     wheel_grid3 = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[DEG * 80]+[np.pi/4] * 4) # center angle 80 degrees
-    wheel_grid1.calculate_active_edges() # calculate active edges for each grid
-    wheel_grid2.calculate_active_edges()
-    wheel_grid3.calculate_active_edges()
     for ax in axes[1]: #set limits and aspect ratio for each subplot
         ax.set_xlim(-2, 8)
         ax.set_ylim(-2, 8)
@@ -315,7 +318,6 @@ def fig2_mechanism(save=True):
     beta1_values = []
     for theta_c in center_angles:
         grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c]+[np.pi/4] * 4)
-        grid.calculate_active_edges()
         beta1_values.append(grid.beta1())
     axes[0][1].plot(center_angles / DEG, beta1_values, color='purple')
     axes[0][1].set_xlabel("Center angle $\\theta_C$ (degrees)")
@@ -330,7 +332,6 @@ def fig2_mechanism(save=True):
     beta0_values = []
     for theta_c in center_angles:
         grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c]+[np.pi/4] * 4)
-        grid.calculate_active_edges()
         beta0_values.append(grid.beta0())
     axes[0][2].plot(center_angles / DEG, beta0_values, color='green')
     axes[0][2].set_xlabel("Center angle $\\theta_C$ (degrees)")
@@ -378,7 +379,6 @@ def fig_2_5_phase_diagram(save=True):
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
             grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[Theta_C[i, j]] + [Spoke_Angle[i, j]] * 4)
-            grid.calculate_active_edges()
             beta0_values[i, j] = grid.beta0()
             beta1_values[i, j] = grid.beta1()
 
@@ -413,7 +413,6 @@ def fig_4_phase_diagram(save=True):
         for i in range(NS_grid.shape[0]):
             for j in range(NS_grid.shape[1]):
                 grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[angle] + [NS_grid[i, j], EW_grid[i, j]] * 2)
-                grid.calculate_active_edges()
                 beta1_values[i, j] = grid.beta1()
         max_beta1 = np.max(beta1_values)
         min_beta1 = np.min(beta1_values)
