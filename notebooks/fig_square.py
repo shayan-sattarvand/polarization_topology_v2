@@ -1,11 +1,15 @@
 import sys
 import os
+import json
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 import matplotlib
-matplotlib.use('Agg')   # headless rendering
+if os.environ.get("MPL_HEADLESS", "1") == "1":
+    matplotlib.use('Agg')   # headless rendering
+else:
+    matplotlib.use('TkAgg')
 matplotlib.rcParams["font.family"] = "sans-serif"
 matplotlib.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans", "Liberation Sans", "sans-serif"]
 import matplotlib.pyplot as plt
@@ -40,10 +44,36 @@ from two_des import (
     symmetric_block,
 )
 
+from cc_density import DisjointSetUnion
+
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'square')
 os.makedirs(FIGURES_DIR, exist_ok=True)
+FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
+os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
+
+
+def _fig4_cache_paths():
+    metadata_path = os.path.join(FIG4_CACHE_DIR, 'metadata.json')
+    panel_paths = [os.path.join(FIG4_CACHE_DIR, f'panel_{index}.csv') for index in range(4)]
+    return metadata_path, panel_paths
+
+
+def _save_fig4_cache(metadata, panel_values):
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
+        json.dump(metadata, metadata_file, indent=2)
+    for panel_path, panel_values_for_axis in zip(panel_paths, panel_values):
+        np.savetxt(panel_path, panel_values_for_axis, fmt='%d', delimiter=',')
+
+
+def _load_fig4_cache():
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
+        metadata = json.load(metadata_file)
+    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=int) for panel_path in panel_paths]
+    return metadata, panel_values
 
 
 class Wheel: 
@@ -134,14 +164,51 @@ class Wheel:
 
     def beta1(self):
         '''Calculate the first Betti number of the wheel graph based on the active edges.'''
-        n_active_edges = len(self.active_edges)
-        n_nodes = self.n + 1  # center + spokes
-        beta0 = self.beta0()
-        beta1 = n_active_edges - n_nodes + beta0
-        return beta1
+        if not self.active_edges:
+            return 0
+
+        active_nodes = set()
+        adjacency = {}
+
+        for u, v in self.active_edges:
+            active_nodes.add(u)
+            active_nodes.add(v)
+            adjacency.setdefault(u, set()).add(v)
+            adjacency.setdefault(v, set()).add(u)
+
+        visited = set()
+        components = 0
+
+        for node in active_nodes:
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency.get(current, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        return len(self.active_edges) - len(active_nodes) + components
+    
+    def binary_representation(self):
+        '''return a number which encodes the wheel information in its binary digits.
+        the first n digits encode the presence or absence of spoke-center edges, and the next n digits encode the presence or absence of rim edges.'''
+        binary = 0
+        for i in range(self.n):
+            binary *= 2
+            binary += (1 if (0, i + 1) in self.active_edges else 0)
+        for i in range(self.n):
+            binary *= 2
+            binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
+        return binary
 
 class SquareWheelGrid:
-    def __init__(self, rows, cols, separation, scale, angles=None):
+    def __init__(self, rows, cols, separation=3, scale=1, angles=None):
         '''Class representing a grid of wheels with n=4 spokes. Each wheel is represented by an instance of the `Wheel` class.'''
         self.rows = rows
         self.cols = cols
@@ -156,6 +223,8 @@ class SquareWheelGrid:
             self.wheels.append(row)
         btwn_wheel_connections = []
         self.active_btwn_wheel_edges = []
+        self.horiz_active = False
+        self.vert_active = False
         # Horizontal first
         for i in range(rows):
             for j in range(cols - 1):
@@ -167,6 +236,7 @@ class SquareWheelGrid:
                 J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                 if J < 0:
                     self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
+                    self.horiz_active = True
                 btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 3), J))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
         # Then vertical
         for i in range(rows - 1):
@@ -179,6 +249,7 @@ class SquareWheelGrid:
                 J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                 if J < 0:
                     self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
+                    self.vert_active = True
                 btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 4), J))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
         self.btwn_wheel_connections = btwn_wheel_connections
 
@@ -253,9 +324,126 @@ class SquareWheelGrid:
     
     def beta1(self):
         '''Calculate the first Betti number of the grid based on the active edges.'''
-        btwn_holes = (self.rows - 1) * (self.cols - 1)  # holes between wheels
-        wheel_holes = sum(wheel.beta1() for row in self.wheels for wheel in row)  # holes within wheels
-        return btwn_holes + wheel_holes
+        def global_id(r, c, local_id):
+            return (r * self.cols + c) * (self.wheels[0][0].n + 1) + local_id
+
+        active_nodes = set()
+        adjacency = {}
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                wheel = self.wheels[r][c]
+                for u, v in wheel.active_edges:
+                    gu = global_id(r, c, u)
+                    gv = global_id(r, c, v)
+                    active_nodes.add(gu)
+                    active_nodes.add(gv)
+                    adjacency.setdefault(gu, set()).add(gv)
+                    adjacency.setdefault(gv, set()).add(gu)
+
+        for (row1, col1, spoke1), (row2, col2, spoke2) in self.active_btwn_wheel_edges:
+            gu = global_id(row1, col1, spoke1)
+            gv = global_id(row2, col2, spoke2)
+            active_nodes.add(gu)
+            active_nodes.add(gv)
+            adjacency.setdefault(gu, set()).add(gv)
+            adjacency.setdefault(gv, set()).add(gu)
+
+        if not active_nodes:
+            return 0
+
+        visited = set()
+        components = 0
+
+        for node in active_nodes:
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency.get(current, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        active_edges = sum(len(wheel.active_edges) for row in self.wheels for wheel in row) + len(self.active_btwn_wheel_edges)
+        return active_edges - len(active_nodes) + components
+
+    def binary_representation(self):
+        '''Return a binary representation of the tiling's center wheels. First 8 digits are the wheel representation, next 2 digits are the horizontal and vertical between-wheel connections.'''
+        wheel = self.wheels[1][1]
+        num = wheel.binary_representation()
+        for i in [self.horiz_active, self.vert_active]:
+            num *= 2
+            if i:
+                num += 1
+        return num
+    
+    def cc_density(self):
+        """
+        Calculate the CC density for a given binary representation of a configuration.
+        
+        Parameters:
+        binary_representation (str): A string of '0's and '1's representing the configuration.
+        
+        Returns:
+        float: The calculated CC density.
+        """
+        binary_representation = self.binary_representation()
+        dsu = DisjointSetUnion(5)
+        inter_wheel = binary_representation % 4
+        wheel_rep = binary_representation // 4
+        binary_representation = binary_representation // 4
+        rim_connections = binary_representation % 16
+        binary_representation = binary_representation // 16
+        wheel_connections = binary_representation
+        for i in range(4):
+            if rim_connections & (1 << (3 - i)):
+                dsu.union(i + 1, (i + 1) % 4 + 1)
+        for i in range(4):
+            if wheel_connections & (1 << (3 - i)):
+                dsu.union(0, i + 1)
+        inter_wheel_new = inter_wheel
+        if (inter_wheel & 2 and dsu.query(1,3)) or (inter_wheel & 1 and dsu.query(2,4)):
+            center_loc = dsu.find(0)  # gonna be same as the path location cuz it has to go thru center
+            for i in range(4):
+                loc = dsu.find(i + 1)
+
+                if loc == center_loc and wheel_rep & (1 << (7 - i)):
+                    wheel_rep -= 1 << (7 - i)
+                loc2 = dsu.find((i + 1) % 4 + 1)
+                if loc2 == center_loc and loc == center_loc and wheel_rep & (1 << (3 - i)):
+                    wheel_rep -= 1 << (3 - i)
+            if inter_wheel & 2 and dsu.query(1,3):
+                inter_wheel_new -= 2
+            if inter_wheel & 1 and dsu.query(2,4):
+                inter_wheel_new -= 1
+        dsu_now = DisjointSetUnion(5)
+        for i in range(4):
+            if wheel_rep & (1 << (3 - i)):
+                dsu_now.union(i + 1, (i + 1) % 4 + 1)
+        for i in range(5):
+            dsu_now.find(i)
+        for i in range(4):
+            if wheel_rep & (1 << (7 - i)):
+                dsu_now.union(0, i + 1)
+        for i in range(5):
+            dsu_now.find(i)
+        for i in range(2):
+            if inter_wheel_new & (1 << (1 - i)):
+                dsu_now.union(i + 1, i + 3)
+        for i in range(5):
+            dsu_now.find(i)
+        return dsu_now.connected_components_edges()
+
+    def beta1_density(self):
+        e = sum(1 for i in str(self.binary_representation()) if i == '1')
+        v = 5
+        c = self.cc_density()
+        return e - v + c
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=4 spokes and spoke angles 45 degrees, but with different center angles.'''
@@ -398,28 +586,96 @@ def fig_2_5_phase_diagram(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_2_5_phase_diagram.png"), dpi=300)
 
-def fig_4_phase_diagram(save=True):
+def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
-    theta_c_values = [DEG * i for i in [10, 45, 80, 90]]
-    for ax, angle in zip(axes.flatten(), theta_c_values):
+    theta_c_degrees = [10, 45, 80, 90]
+    ns_angle_degrees = np.linspace(0, 360, 200)
+    ew_angle_degrees = np.linspace(0, 360, 200)
+    if preprocessed:
+        metadata, panel_values = _load_fig4_cache()
+        theta_c_degrees = metadata['theta_c_degrees']
+        ns_angle_degrees = np.array(metadata['ns_angle_degrees'])
+        ew_angle_degrees = np.array(metadata['ew_angle_degrees'])
+    else:
+        panel_values = []
+        for theta_c_degree in theta_c_degrees:
+            theta_c = theta_c_degree * DEG
+            NS_angles = ns_angle_degrees * DEG
+            EW_angles = ew_angle_degrees * DEG
+            NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
+            beta1_values = np.zeros_like(NS_grid, dtype=int)
+            for i in range(NS_grid.shape[0]):
+                for j in range(NS_grid.shape[1]):
+                    grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 2)
+                    beta1_values[i, j] = grid.beta1()
+            panel_values.append(beta1_values)
+        _save_fig4_cache(
+            {
+                'theta_c_degrees': theta_c_degrees,
+                'ns_angle_degrees': ns_angle_degrees.tolist(),
+                'ew_angle_degrees': ew_angle_degrees.tolist(),
+            },
+            panel_values,
+        )
+
+    theta_c_values = [degree * DEG for degree in theta_c_degrees]
+    ax_to_theta = {}
+    NS_grid, EW_grid = np.meshgrid(ns_angle_degrees * DEG, ew_angle_degrees * DEG)
+    for ax, angle, beta1_values in zip(axes.flatten(), theta_c_values, panel_values):
         ax.set_xlabel("NS spoke angle (degrees)")
         ax.set_ylabel("EW spoke angle (degrees)")
         ax.set_title("Phase diagram of $\\beta_1$ for a 3x3 grid with $\\theta_C = {}$°".format(angle / DEG))
-        NS_angles = np.linspace(0, 360, 200) * DEG
-        EW_angles = np.linspace(0, 360, 200) * DEG
-        NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
-        beta1_values = np.zeros_like(NS_grid, dtype=int)
-        for i in range(NS_grid.shape[0]):
-            for j in range(NS_grid.shape[1]):
-                grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[angle] + [NS_grid[i, j], EW_grid[i, j]] * 2)
-                beta1_values[i, j] = grid.beta1()
+        ax_to_theta[ax] = angle
         max_beta1 = np.max(beta1_values)
         min_beta1 = np.min(beta1_values)
         c = ax.pcolormesh(NS_grid / DEG, EW_grid / DEG, beta1_values, shading='auto', cmap='viridis', vmin=min_beta1, vmax=max_beta1)
         fig.colorbar(c, ax=ax, label='$\\beta_1$')
-    if save: # save the figure to the figures directory if specified
+    backend_is_interactive = matplotlib.get_backend().lower() != "agg"
+
+    if interactive and backend_is_interactive:
+        def on_click(event):
+            if event.inaxes not in ax_to_theta:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+            if event.button != 1:
+                return
+            theta_c = ax_to_theta[event.inaxes]
+            ns_angle = event.xdata * DEG
+            ew_angle = event.ydata * DEG
+            grid = SquareWheelGrid(
+                rows=3,
+                cols=3,
+                separation=3.0,
+                scale=1.0,
+                angles=[theta_c] + [ns_angle, ew_angle] * 2,
+            )
+            fig_grid, ax_grid = plt.subplots(figsize=(8, 8))
+            grid.render_grid(ax_grid, draw_dipoles=True)
+            ax_grid.set_aspect('equal')
+            ax_grid.axis('off')
+            ax_grid.set_title(
+                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\n$\\beta_0 = {}$, $\\beta_1 = {}$, $\\rho_c = {}$".format(
+                    theta_c / DEG,
+                    event.xdata,
+                    event.ydata,
+                    grid.beta0(),
+                    grid.beta1(),
+                    grid.cc_density(),
+                )
+            )
+            fig_grid.tight_layout()
+            fig_grid.show()
+
+        fig.canvas.mpl_connect("button_press_event", on_click)
+
+    if save and not preprocessed: # save the figure to the figures directory if specified
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_4_phase_diagram.png"), dpi=300)
+    if show and backend_is_interactive:
+        plt.show()
+    elif show and not backend_is_interactive:
+        print("Interactive display skipped because matplotlib backend is non-interactive:", matplotlib.get_backend())
     
 def fig_5_phase_diagram(save=True):
     '''Generate a figure showing sign of NS * sign of EW * delta E for a single wheel with n=4 spokes as a function of the center angle and the spoke angles. This is the quantity that determines whether the grid will have loops or not, since it determines whether the NS and EW edges can be active at the same time.'''
@@ -452,15 +708,15 @@ def fig_5_phase_diagram(save=True):
 
 
 if __name__ == "__main__":
-    print("Generating figure 1...")
-    fig1(save=True)
-    print("Generating figure 2 mechanism...")
-    fig2_mechanism(save=True)
-    print("Generating figure 2 phase diagram...")
-    fig_2_phase_diagram(save=True)
+    # print("Generating figure 1...")
+    # fig1(save=True)
+    # print("Generating figure 2 mechanism...")
+    # fig2_mechanism(save=True)
+    # print("Generating figure 2 phase diagram...")
+    # fig_2_phase_diagram(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
     print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True)
-    print("Generating figure 5 phase diagram...")
-    fig_5_phase_diagram(save=True)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    # print("Generating figure 5 phase diagram...")
+    # fig_5_phase_diagram(save=True)

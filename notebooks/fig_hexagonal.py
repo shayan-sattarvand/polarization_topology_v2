@@ -144,7 +144,7 @@ class HexagonalWheelTiling:
         for i in self.wheels:
             for wheel in i:
                 wheel.render_wheel(ax, draw_dipoles=draw_dipoles)
-        for (i1, j1, s1), (i2, j2, s2) in self.btwn_wheel_connections:
+        for (i1, j1, s1), (i2, j2, s2), _ in self.btwn_wheel_connections:
             x1, y1 = self.wheels[i1][j1].spokes[s1 - 1]
             x2, y2 = self.wheels[i2][j2].spokes[s2 - 1]
             if ((i1, j1, s1), (i2, j2, s2)) in self.active_btwn_wheel_edges:
@@ -198,10 +198,55 @@ class HexagonalWheelTiling:
         return components
     
     def beta1(self):
-        e = len(self.active_btwn_wheel_edges) + sum(len(wheel.active_edges) for row in self.wheels for wheel in row)
-        c = self.beta0()
-        v = self.rows * self.cols * 4
-        return e - v + c
+        n_local = self.wheels[0][0].n + 1
+
+        def global_id(r, c, local_id):
+            return (r * self.cols + c) * n_local + local_id
+
+        active_nodes = set()
+        adjacency = {}
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                wheel = self.wheels[r][c]
+                for u, v in wheel.active_edges:
+                    gu = global_id(r, c, u)
+                    gv = global_id(r, c, v)
+                    active_nodes.add(gu)
+                    active_nodes.add(gv)
+                    adjacency.setdefault(gu, set()).add(gv)
+                    adjacency.setdefault(gv, set()).add(gu)
+
+        for (row1, col1, spoke1), (row2, col2, spoke2) in self.active_btwn_wheel_edges:
+            gu = global_id(row1, col1, spoke1)
+            gv = global_id(row2, col2, spoke2)
+            active_nodes.add(gu)
+            active_nodes.add(gv)
+            adjacency.setdefault(gu, set()).add(gv)
+            adjacency.setdefault(gv, set()).add(gu)
+
+        if not active_nodes:
+            return 0
+
+        visited = set()
+        components = 0
+
+        for node in active_nodes:
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency.get(current, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        active_edges = sum(len(wheel.active_edges) for row in self.wheels for wheel in row) + len(self.active_btwn_wheel_edges)
+        return active_edges - len(active_nodes) + components
 
 
 def fig1(save=True):

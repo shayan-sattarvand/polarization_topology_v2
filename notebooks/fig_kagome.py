@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import numpy as np
 
 
@@ -7,7 +8,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import matplotlib
-matplotlib.use('Agg')   # headless rendering
+if os.environ.get("MPL_HEADLESS", "1") == "1":
+    matplotlib.use('Agg')   # headless rendering
+else:
+    matplotlib.use('TkAgg')
 matplotlib.rcParams["font.family"] = "sans-serif"
 matplotlib.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans", "Liberation Sans", "sans-serif"]
 import matplotlib.pyplot as plt
@@ -46,8 +50,32 @@ from fig_square import Wheel
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'kagome')
 os.makedirs(FIGURES_DIR, exist_ok=True)
+FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
+os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
+
+
+def _fig4_cache_paths():
+    metadata_path = os.path.join(FIG4_CACHE_DIR, 'metadata.json')
+    panel_paths = [os.path.join(FIG4_CACHE_DIR, f'panel_{index}.csv') for index in range(4)]
+    return metadata_path, panel_paths
+
+
+def _save_fig4_cache(metadata, panel_values):
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
+        json.dump(metadata, metadata_file, indent=2)
+    for panel_path, panel_values_for_axis in zip(panel_paths, panel_values):
+        np.savetxt(panel_path, panel_values_for_axis, fmt='%d', delimiter=',')
+
+
+def _load_fig4_cache():
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
+        metadata = json.load(metadata_file)
+    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=int) for panel_path in panel_paths]
+    return metadata, panel_values
 
 from math import sqrt
 
@@ -262,10 +290,55 @@ class KagomeWheelTiling:
         return components
     
     def beta1(self):
-        e = len(self.active_btwn_wheel_edges) + sum(len(wheel.active_edges) for row in self.wheels for wheel in row)
-        c = self.beta0()
-        v = self.rows * self.cols * 7
-        return e - v + c
+        n_local = self.wheels[0][0].n + 1
+
+        def global_id(r, c, local_id):
+            return (r * self.cols + c) * n_local + local_id
+
+        active_nodes = set()
+        adjacency = {}
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                wheel = self.wheels[r][c]
+                for u, v in wheel.active_edges:
+                    gu = global_id(r, c, u)
+                    gv = global_id(r, c, v)
+                    active_nodes.add(gu)
+                    active_nodes.add(gv)
+                    adjacency.setdefault(gu, set()).add(gv)
+                    adjacency.setdefault(gv, set()).add(gu)
+
+        for (row1, col1, spoke1), (row2, col2, spoke2) in self.active_btwn_wheel_edges:
+            gu = global_id(row1, col1, spoke1)
+            gv = global_id(row2, col2, spoke2)
+            active_nodes.add(gu)
+            active_nodes.add(gv)
+            adjacency.setdefault(gu, set()).add(gv)
+            adjacency.setdefault(gv, set()).add(gu)
+
+        if not active_nodes:
+            return 0
+
+        visited = set()
+        components = 0
+
+        for node in active_nodes:
+            if node in visited:
+                continue
+            components += 1
+            stack = [node]
+            visited.add(node)
+
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency.get(current, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        stack.append(neighbor)
+
+        active_edges = sum(len(wheel.active_edges) for row in self.wheels for wheel in row) + len(self.active_btwn_wheel_edges)
+        return active_edges - len(active_nodes) + components
 
 
 def fig1(save=True):
@@ -399,18 +472,109 @@ def fig_2_5_phase_diagram_kagome(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_5_phase_diagram.png"), dpi=300)
 
+def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
+    '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 12x6 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
+    fig, axes = plt.subplots(2, 2, figsize=(25, 10))
+    theta_c_degrees = [0, 15, 30, 60]
+    ns_angle_degrees = np.linspace(0, 360, 200)
+    ew_angle_degrees = np.linspace(0, 360, 200)
+    if preprocessed:
+        metadata, panel_values = _load_fig4_cache()
+        theta_c_degrees = metadata['theta_c_degrees']
+        ns_angle_degrees = np.array(metadata['ns_angle_degrees'])
+        ew_angle_degrees = np.array(metadata['ew_angle_degrees'])
+    else:
+        panel_values = []
+        for theta_c_degree in theta_c_degrees:
+            theta_c = theta_c_degree * DEG
+            NS_angles = ns_angle_degrees * DEG
+            EW_angles = ew_angle_degrees * DEG
+            NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
+            beta1_values = np.zeros_like(NS_grid, dtype=int)
+            for i in range(NS_grid.shape[0]):
+                for j in range(NS_grid.shape[1]):
+                    grid = KagomeWheelTiling(rows=12, cols=6, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 3)
+                    beta1_values[i, j] = grid.beta1()
+            panel_values.append(beta1_values)
+        _save_fig4_cache(
+            {
+                'theta_c_degrees': theta_c_degrees,
+                'ns_angle_degrees': ns_angle_degrees.tolist(),
+                'ew_angle_degrees': ew_angle_degrees.tolist(),
+            },
+            panel_values,
+        )
+
+    theta_c_values = [degree * DEG for degree in theta_c_degrees]
+    ax_to_theta = {}
+    NS_grid, EW_grid = np.meshgrid(ns_angle_degrees * DEG, ew_angle_degrees * DEG)
+    for ax, angle, beta1_values in zip(axes.flatten(), theta_c_values, panel_values):
+        ax.set_xlabel("NS spoke angle (degrees)")
+        ax.set_ylabel("EW spoke angle (degrees)")
+        ax.set_title("Phase diagram of $\\beta_1$ for a 12x6 grid with $\\theta_C = {}$°".format(angle / DEG))
+        ax_to_theta[ax] = angle
+        max_beta1 = np.max(beta1_values)
+        min_beta1 = np.min(beta1_values)
+        c = ax.pcolormesh(NS_grid / DEG, EW_grid / DEG, beta1_values, shading='auto', cmap='viridis', vmin=min_beta1, vmax=max_beta1)
+        fig.colorbar(c, ax=ax, label='$\\beta_1$')
+    backend_is_interactive = matplotlib.get_backend().lower() != "agg"
+
+    if interactive and backend_is_interactive:
+        def on_click(event):
+            if event.inaxes not in ax_to_theta:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+            if event.button != 1:
+                return
+            theta_c = ax_to_theta[event.inaxes]
+            ns_angle = event.xdata * DEG
+            ew_angle = event.ydata * DEG
+            grid = KagomeWheelTiling(
+                rows=12,
+                cols=6,
+                separation=3.0,
+                scale=1.0,
+                angles=[theta_c] + [ns_angle, ew_angle] * 3,
+            )
+            fig_grid, ax_grid = plt.subplots(figsize=(8, 8))
+            grid.render_grid(ax_grid, draw_dipoles=True)
+            ax_grid.set_aspect('equal')
+            ax_grid.axis('off')
+            ax_grid.set_title(
+                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\\n$\\beta_0 = {}$, $\\beta_1 = {}$".format(
+                    theta_c / DEG,
+                    event.xdata,
+                    event.ydata,
+                    grid.beta0(),
+                    grid.beta1(),
+                )
+            )
+            fig_grid.tight_layout()
+            fig_grid.show()
+
+        fig.canvas.mpl_connect("button_press_event", on_click)
+
+    if save: # save the figure to the figures directory if specified
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_4_phase_diagram.png"), dpi=300)
+    if show and backend_is_interactive:
+        plt.show()
+    elif show and not backend_is_interactive:
+        print("Interactive display skipped because matplotlib backend is non-interactive:", matplotlib.get_backend())
 
 
 
 if __name__ == "__main__":
-    print("Generating Fig 1...")
-    fig1()
-    print("Generating Fig 2 mechanism...")
-    fig2_mechanism_kagome()
-    print("Generating Fig 2 phase diagram...")
-    fig_2_phase_diagram_kagome()
-    print("Generating Fig 2.5 phase diagram...")
-    fig_2_5_phase_diagram_kagome()
+    # print("Generating Fig 1...")
+    # fig1()
+    # print("Generating Fig 2 mechanism...")
+    # fig2_mechanism_kagome()
+    # print("Generating Fig 2 phase diagram...")
+    # fig_2_phase_diagram_kagome()
+    # print("Generating Fig 2.5 phase diagram...")
+    # fig_2_5_phase_diagram_kagome()
+    print("Generating Fig 4 phase diagram...")
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
 
 
 
