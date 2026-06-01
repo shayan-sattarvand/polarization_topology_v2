@@ -43,6 +43,7 @@ from two_des import (
 )
 
 from fig_square import Wheel
+from cc_density import DisjointSetUnion, print_bin
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'hexagonal')
 os.makedirs(FIGURES_DIR, exist_ok=True)
@@ -72,12 +73,12 @@ class HexagonalWheelTiling:
         # First: the horizontal edges
         btwn_wheel_connections = []
         self.active_btwn_wheel_edges = []
+        self.horiz_active = False
         for i in range(rows):
             for j in range(cols // 2):
                 if (i%2) == 0:
                     if 2 * j + 2 > cols - 1:
                         continue
-                    
                     wheel1 = self.wheels[i][2 * j + 1]
                     wheel2 = self.wheels[i][2 * j + 2]
                     phi1 = wheel1.spoke_angles[0]
@@ -86,6 +87,7 @@ class HexagonalWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((i, 2 * j + 1, 1), (i, 2 * j + 2, 2)))
+                        self.horiz_active = True
                     btwn_wheel_connections.append((
                         (i, 2 * j + 1, 1),  # wheel on the left
                         (i, 2 * j + 2, 2),   # wheel on the right
@@ -102,12 +104,15 @@ class HexagonalWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((i, 2 * j, 1), (i, 2 * j + 1, 2)))
+                        self.horiz_active = True
                     btwn_wheel_connections.append((
                         (i, 2 * j, 1),      # wheel on the left
                         (i, 2 * j + 1, 2),   # wheel on the right
                         J
                     ))
         #Next: the vertical edges
+        self.diag1_active = False
+        self.diag2_active = False
         for i in range(rows - 1):
             for j in range(cols):
                 if (i+j)%2 == 0:
@@ -119,15 +124,16 @@ class HexagonalWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((i, j, 1), (i + 1, j, 3)))
+                        self.diag1_active = True
                     btwn_wheel_connections.append((
-                        (i, j, 1),          # wheel on the top
-                        (i + 1, j, 3),       # wheel on the bottom
+                        (i, j, 1),          # wheel on the bottom
+                        (i + 1, j, 3),       # wheel on the top
                         J
                     ))
                 if (i+j)%2 == 1:
                     btwn_wheel_connections.append((
-                        (i, j, 2),          # wheel on the top
-                        (i + 1, j, 3),   # wheel on the bottom
+                        (i, j, 2),          # wheel on the bottom
+                        (i + 1, j, 3),   # wheel on the top
                         J
                     ))
                     wheel1 = self.wheels[i][j]
@@ -138,6 +144,7 @@ class HexagonalWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 3)))
+                        self.diag2_active = True
         self.btwn_wheel_connections = btwn_wheel_connections
     
     def render_grid(self, ax, draw_dipoles=False):
@@ -248,6 +255,112 @@ class HexagonalWheelTiling:
         active_edges = sum(len(wheel.active_edges) for row in self.wheels for wheel in row) + len(self.active_btwn_wheel_edges)
         return active_edges - len(active_nodes) + components
 
+    def binary_representation(self):
+        binary_representation = 0
+        wheel1 = self.wheels[1][0]
+        wheel2 = self.wheels[1][1]
+        bin1 = wheel1.binary_representation()
+        bin2 = wheel2.binary_representation()
+        for i in f'{bin1:06b}':
+            binary_representation = (binary_representation << 1) | int(i)
+        for i in f'{bin2:06b}':
+            binary_representation = (binary_representation << 1) | int(i)
+        for i in [self.horiz_active, self.diag1_active, self.diag2_active]:
+            binary_representation = (binary_representation << 1) | int(i)
+        return binary_representation
+
+    def cc_density(self):
+        dsu = DisjointSetUnion(8)
+        binary_representation = self.binary_representation()
+        inter_wheel = binary_representation % 8
+        binary_representation = binary_representation // 8
+        wheel2_rep = binary_representation % 64
+        binary_representation = binary_representation // 64
+        wheel1_rep = binary_representation % 64
+        binary_representation = binary_representation // 64
+        
+        for i in range(3): #model the hex lattice as a rhombic lattice with 2 horizontally adjacent wheels = 1 vertex
+            if wheel1_rep & (1 << (5 - i)):
+                dsu.union(0, i + 1)
+        for i in range(3):
+            if wheel1_rep & (1 << (2 - i)):
+                dsu.union(i + 1, (i + 1) % 3 + 1)
+        for i in range(3):
+            if wheel2_rep & (1 << (5 - i)):
+                dsu.union(4, i + 5)
+        for i in range(3):
+            if wheel2_rep & (1 << (2 - i)):
+                dsu.union(i + 5, (i + 1) % 3 + 5)
+        if inter_wheel & 4:
+            dsu.union(1, 6)
+        inter_wheel_new = inter_wheel
+        if inter_wheel & 4 and ((inter_wheel & 2 and dsu.query(3, 5)) or (inter_wheel & 1 and dsu.query(2, 7))): #all the diag ones
+            path_loc = dsu.find(1) #must go through this choke point
+            if inter_wheel & 2 and dsu.query(3, 5):
+                inter_wheel_new -= 2
+            if inter_wheel & 1 and dsu.query(2, 7):
+                inter_wheel_new -= 1
+            for i in range(3):
+                if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc: #center-spoke connections of wheel 1
+                    wheel1_rep -= (1 << (5 - i))
+                if dsu.find(i + 5) == path_loc and dsu.find(4) == path_loc: #center-spoke connections of wheel 2
+                    wheel2_rep -= (1 << (5 - i))
+                if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 3 + 1) == path_loc: #rim wheel 1
+                    wheel1_rep -= (1 << (2 - i))
+                if dsu.find(i + 5) == path_loc and dsu.find((i + 1) % 3 + 5) == path_loc: #rim wheel 2
+                    wheel2_rep -= (1 << (2 - i))
+        #now check vertical ones
+        if inter_wheel & 3 == 3:
+            #vertical column 0
+            inter_wheel_new -= 3
+            if dsu.query(2, 3):
+                path_loc = dsu.find(2)
+                for i in range(3): #don't double subtract! add the extra "and" condition for this reason
+                    if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc and wheel1_rep & (1 << (5 - i)): #center-spoke connections of wheel 1
+                        wheel1_rep -= (1 << (5 - i))
+                    if dsu.find(i + 5) == path_loc and dsu.find(4) == path_loc and wheel2_rep & (1 << (5 - i)): #center-spoke connections of wheel 2
+                        wheel2_rep -= (1 << (5 - i))
+                    if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 3 + 1) == path_loc and wheel1_rep & (1 << (2 - i)): #rim wheel 1
+                        wheel1_rep -= (1 << (2 - i))
+                    if dsu.find(i + 5) == path_loc and dsu.find((i + 1) % 3 + 5) == path_loc and wheel2_rep & (1 << (2 - i)): #rim wheel 2
+                        wheel2_rep -= (1 << (2 - i))
+            if dsu.query(5, 7):
+                path_loc = dsu.find(5)
+                for i in range(3): #don't double subtract! add the extra "and" condition for this reason
+                    if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc and wheel1_rep & (1 << (5 - i)): #center-spoke connections of wheel 1
+                        wheel1_rep -= (1 << (5 - i))
+                    if dsu.find(i + 5) == path_loc and dsu.find(4) == path_loc and wheel2_rep & (1 << (5 - i)): #center-spoke connections of wheel 2
+                        wheel2_rep -= (1 << (5 - i))
+                    if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 3 + 1) == path_loc and wheel1_rep & (1 << (2 - i)): #rim wheel 1
+                        wheel1_rep -= (1 << (2 - i))
+                    if dsu.find(i + 5) == path_loc and dsu.find((i + 1) % 3 + 5) == path_loc and wheel2_rep & (1 << (2 - i)): #rim wheel 2
+                        wheel2_rep -= (1 << (2 - i))
+        dsu_now = DisjointSetUnion(8)
+        for i in range(3): #model the hex lattice as a rhombic lattice with 2 horizontally adjacent wheels = 1 vertex
+            if wheel1_rep & (1 << (5 - i)):
+                dsu_now.union(0, i + 1)
+        for i in range(3):
+            if wheel1_rep & (1 << (2 - i)):
+                dsu_now.union(i + 1, (i + 1) % 3 + 1)
+        for i in range(3):
+            if wheel2_rep & (1 << (5 - i)):
+                dsu_now.union(4, i + 5)
+        for i in range(3):
+            if wheel2_rep & (1 << (2 - i)):
+                dsu_now.union(i + 5, (i + 1) % 3 + 5)
+        if inter_wheel_new & 4:
+            dsu_now.union(1, 6)
+        if inter_wheel_new & 2:
+            dsu_now.union(3, 5)
+        if inter_wheel_new & 1:
+            dsu_now.union(2, 7)
+        return dsu_now.connected_components_edges() / 2 # divide by 2 to account for the fact that we modeled the hex lattice as a rhombic lattice with 2 horizontally adjacent wheels = 1 vertex
+    
+    def beta1_density(self):
+        e = sum(1 for i in str(self.binary_representation) if i == '1') / 2
+        v = 4
+        c = self.cc_density()
+        return (e - v + c)
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=3 spokes and spoke angles 60 degrees, but with different center angles.'''
@@ -381,15 +494,21 @@ def fig_2_5_phase_diagram_hexagonal(save=True):
 
 
 if __name__ == "__main__":
-    print("Generating figure 1...")
-    fig1(save=True)
-    print("Generating figure 2 mechanism...")
-    fig2_mechanism_hexagonal(save=True)
-    print("Generating figure 2 phase diagram...")
-    fig_2_phase_diagram_hexagonal(save=True)
-    print("Generating figure 2.5 phase diagram...")
-    fig_2_5_phase_diagram_hexagonal(save=True)
-
+    # print("Generating figure 1...")
+    # fig1(save=True)
+    # print("Generating figure 2 mechanism...")
+    # fig2_mechanism_hexagonal(save=True)
+    # print("Generating figure 2 phase diagram...")
+    # fig_2_phase_diagram_hexagonal(save=True)
+    # print("Generating figure 2.5 phase diagram...")
+    # fig_2_5_phase_diagram_hexagonal(save=True)
+    test_grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 180] + [60 * DEG] * 2 + [120 * DEG])
+    fig, ax = plt.subplots(figsize=(6, 6))
+    test_grid.render_grid(ax, draw_dipoles=True)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    plt.savefig(os.path.join(FIGURES_DIR, "test_grid.png"), dpi=300)
+    print(test_grid.cc_density())
 
 
 
