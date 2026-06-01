@@ -301,7 +301,6 @@ class TriangleWheelTiling:
     def cc_density(self):
         '''Connected component density of the lattice'''
         binary_representation = self.binary_representation()
-        print_bin(binary_representation)
         dsu = DisjointSetUnion(7)
         inter_wheel = binary_representation % 8
         wheel_rep = binary_representation // 8
@@ -326,7 +325,6 @@ class TriangleWheelTiling:
             center_loc = dsu.find(0)  # gonna be same as the path location cuz it has to go thru center
             for i in range(6):
                 loc = dsu.find(i + 1)
-                print_bin(wheel_rep)
                 if loc == center_loc and wheel_rep & (1 << (11 - i)):
                     wheel_rep -= 1 << (11 - i)
                 loc2 = dsu.find((i + 1) % 6 + 1)
@@ -346,10 +344,10 @@ class TriangleWheelTiling:
         return dsu_now.connected_components_edges()
 
     def beta1_density(self):
-        e = sum(1 for i in str(self.binary_representation()) if i == '1')
+        e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
         v = 7
         c = self.cc_density()
-        return e - v + c
+        return max(0, e - v + c)
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=6 spokes and spoke angles 30 degrees, but with different center angles.'''
@@ -504,7 +502,7 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             for i in range(NS_grid.shape[0]):
                 for j in range(NS_grid.shape[1]):
                     grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 3)
-                    beta1_values[i, j] = grid.beta1()
+                    beta1_values[i, j] = grid.beta1_density()
             panel_values.append(beta1_values)
         _save_fig4_cache(
             {
@@ -552,13 +550,14 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             ax_grid.set_aspect('equal')
             ax_grid.axis('off')
             ax_grid.set_title(
-                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\\n$\\beta_0 = {}$, $\\beta_1 = {}$, $\\rho_c = {}$".format(
+                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\n$\\beta_0 = {}$, $\\beta_1 = {}$, $\\rho_0 = {}$, $\\rho_1 = {}$".format(
                     theta_c / DEG,
                     event.xdata,
                     event.ydata,
                     grid.beta0(),
                     grid.beta1(),
                     grid.cc_density(),
+                    grid.beta1_density(),
                 )
             )
             fig_grid.tight_layout()

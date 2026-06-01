@@ -93,11 +93,8 @@ def cc_density(binary_representation):
     return dsu_now.connected_components_edges()
 
 if __name__ == '__main__':
-    import fig_square
-    DEG = fig_square.DEG
+    import fig_hexagonal
+    DEG = fig_hexagonal.DEG
 
-    lattice = fig_square.SquareWheelGrid(3, 3, angles=[10 * DEG] + [100 * DEG, 165 * DEG] * 2)
-    print(f"{lattice.binary_representation():b}")
-
-    print(cc_density(lattice.binary_representation()))
+    
 
