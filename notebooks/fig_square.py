@@ -199,10 +199,10 @@ class Wheel:
         '''return a number which encodes the wheel information in its binary digits.
         the first n digits encode the presence or absence of spoke-center edges, and the next n digits encode the presence or absence of rim edges.'''
         binary = 0
-        for i in range(self.n):
+        for i in range(self.n): # center to spoke 
             binary *= 2
             binary += (1 if (0, i + 1) in self.active_edges else 0)
-        for i in range(self.n):
+        for i in range(self.n): # rim
             binary *= 2
             binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
         return binary
