@@ -382,7 +382,7 @@ class SquareWheelGrid:
                 num += 1
         return num
     
-    def cc_density(self):
+    def cc_density(self, include_lone = True):
         """
         Calculate the CC density for a given binary representation of a configuration.
         
@@ -408,19 +408,34 @@ class SquareWheelGrid:
                 dsu.union(0, i + 1)
         inter_wheel_new = inter_wheel
         if (inter_wheel & 2 and dsu.query(1,3)) or (inter_wheel & 1 and dsu.query(2,4)):
-            center_loc = dsu.find(0)  # gonna be same as the path location cuz it has to go thru center
-            for i in range(4):
-                loc = dsu.find(i + 1)
-
-                if loc == center_loc and wheel_rep & (1 << (7 - i)):
-                    wheel_rep -= 1 << (7 - i)
-                loc2 = dsu.find((i + 1) % 4 + 1)
-                if loc2 == center_loc and loc == center_loc and wheel_rep & (1 << (3 - i)):
-                    wheel_rep -= 1 << (3 - i)
+            path_locs = []
             if inter_wheel & 2 and dsu.query(1,3):
                 inter_wheel_new -= 2
+                path_locs.append(dsu.find(1))
             if inter_wheel & 1 and dsu.query(2,4):
                 inter_wheel_new -= 1
+                path_locs.append(dsu.find(2))
+            for path_loc in path_locs:
+                for i in range(4):
+                    loc = dsu.find(i + 1)
+                    if loc == path_loc and wheel_rep & (1 << (7 - i)):
+                        wheel_rep -= 1 << (7 - i)
+                    loc2 = dsu.find((i + 1) % 4 + 1)
+                    if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (3 - i)):
+                        wheel_rep -= 1 << (3 - i)
+            
+        #ugh check zigzags
+        if inter_wheel & 3 == 3 and ((dsu.query(1, 2) and dsu.query(3, 4)) or (dsu.query(1, 4) and dsu.query(2, 3))):
+            inter_wheel_new = 0
+            path_locs = [dsu.find(1), dsu.find(3)]
+            for path_loc in path_locs:
+                for i in range(4):
+                    loc = dsu.find(i + 1)
+                    if loc == path_loc and wheel_rep & (1 << (7 - i)):
+                        wheel_rep -= 1 << (7 - i)
+                    loc2 = dsu.find((i + 1) % 4 + 1)
+                    if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (3 - i)):
+                        wheel_rep -= 1 << (3 - i)
         dsu_now = DisjointSetUnion(5)
         for i in range(4):
             if wheel_rep & (1 << (3 - i)):
@@ -437,13 +452,47 @@ class SquareWheelGrid:
                 dsu_now.union(i + 1, i + 3)
         for i in range(5):
             dsu_now.find(i)
-        return dsu_now.connected_components_edges()
+        if include_lone:
+            return dsu_now.connected_components_edges() + 5 - self.connected_vertices()
+        else:
+            return dsu_now.connected_components_edges()
 
     def beta1_density(self):
         e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
-        v = 5
-        c = self.cc_density()
-        return max(0, e - v + c)
+        v = self.connected_vertices()
+        c = self.cc_density(include_lone=False)
+        t = self.num_triangles()
+        return max(0, e - v + c - t)
+    
+    def num_triangles(self):
+        bin_rep = f'{self.binary_representation():10b}'[:-2]  # first 8 bits are the wheel, next 2 bits are the between-wheel connections
+        count = 0
+        for i in range(4):
+            if bin_rep[i] == '1' and bin_rep[(i + 1) % 4] == '1' and bin_rep[4 + i] == '1':
+                count += 1
+        return count
+    
+    def connected_vertices(self):
+        wheel = self.wheels[1][1]
+        center_connected = False
+        spoke_connected = [False] * 4
+        for i in range(4):
+            if (0, i + 1) in wheel.active_edges:
+                center_connected = True
+                spoke_connected[i] = True
+            if (i + 1, (i + 1) % 4 + 1) in wheel.active_edges:
+                spoke_connected[i] = True
+                spoke_connected[(i + 1) % 4] = True
+        for (row1, col1, spoke1), (row2, col2, spoke2) in self.active_btwn_wheel_edges:
+            if (row1, col1) == (1, 1):
+                spoke_connected[spoke1 - 1] = True
+            if (row2, col2) == (1, 1):
+                spoke_connected[spoke2 - 1] = True
+        v = 0
+        if center_connected:
+            v += 1
+        v += sum(spoke_connected)
+        return v
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=4 spokes and spoke angles 45 degrees, but with different center angles.'''
@@ -718,6 +767,6 @@ if __name__ == "__main__":
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
     print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)

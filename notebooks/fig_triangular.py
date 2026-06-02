@@ -298,7 +298,7 @@ class TriangleWheelTiling:
                 num += 1
         return num
             
-    def cc_density(self):
+    def cc_density(self, include_lone=True):
         '''Connected component density of the lattice'''
         binary_representation = self.binary_representation()
         dsu = DisjointSetUnion(7)
@@ -332,7 +332,7 @@ class TriangleWheelTiling:
                     wheel_rep -= 1 << (5 - i)
         #ugh now time to check zig-zags
         if (inter_wheel & 5) == 5 and dsu.query(1, 3) and dsu.query(4, 6): # zigzag consisting of horiz and diag2
-            inter_wheel_new -= 5
+            inter_wheel_new -= inter_wheel_new & 5
             path_loc = dsu.find(1)
             for i in range(6):
                 loc = dsu.find(i + 1)
@@ -350,7 +350,7 @@ class TriangleWheelTiling:
                 if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
                     wheel_rep -= 1 << (5 - i)
         if (inter_wheel & 3) == 3 and dsu.query(2, 6) and dsu.query(3, 5): # zigzag consisting of diag1 and diag2
-            inter_wheel_new -= 3
+            inter_wheel_new -= inter_wheel_new & 3
             path_loc = dsu.find(2) 
             for i in range(6):
                 loc = dsu.find(i + 1)
@@ -367,8 +367,8 @@ class TriangleWheelTiling:
                 loc2 = dsu.find((i + 1) % 6 + 1)
                 if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
                     wheel_rep -= 1 << (5 - i)
-        if (inter_wheel & 6) == 6 and dsu.query(2, 4) and dsu.query(1, 5): # zigzag consisting of horiz and diag2
-            inter_wheel_new -= 6
+        if (inter_wheel & 6) == 6 and dsu.query(2, 4) and dsu.query(1, 5): # zigzag consisting of horiz and diag1
+            inter_wheel_new -= inter_wheel_new & 6
             path_loc = dsu.find(1) 
             for i in range(6):
                 loc = dsu.find(i + 1)
@@ -397,12 +397,15 @@ class TriangleWheelTiling:
         for i in range(3):
             if inter_wheel_new & (1 << (2 - i)):
                 dsu_now.union(i + 1, i + 4)
-        return dsu_now.connected_components_edges()
+        if include_lone:
+            return dsu_now.connected_components_edges() + 7 - self.connected_vertices()
+        else:
+            return dsu_now.connected_components_edges()
 
     def beta1_density(self):
         e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
         v = 7
-        c = self.cc_density()
+        c = self.cc_density(include_lone=False)
         t = self.num_triangles()
         return max(0, e - v + c - t)
     
@@ -413,6 +416,28 @@ class TriangleWheelTiling:
             if bin_rep[i] == '1' and bin_rep[(i + 1) % 6] == '1' and bin_rep[6 + i] == '1':
                 count += 1
         return count
+
+    def connected_vertices(self):
+        wheel = self.wheels[1][1]
+        center_connected = False
+        spoke_connected = [False] * 6
+        for i in range(6):
+            if (0, i + 1) in wheel.active_edges:
+                center_connected = True
+                spoke_connected[i] = True
+            if (i + 1, (i + 1) % 6 + 1) in wheel.active_edges:
+                spoke_connected[i] = True
+                spoke_connected[(i + 1) % 6] = True
+        for (row1, col1, spoke1), (row2, col2, spoke2) in self.active_btwn_wheel_edges:
+            if (row1, col1) == (1, 1):
+                spoke_connected[spoke1 - 1] = True
+            if (row2, col2) == (1, 1):
+                spoke_connected[spoke2 - 1] = True
+        v = 0
+        if center_connected:
+            v += 1
+        v += sum(spoke_connected)
+        return v
 
 
 def fig1(save=True):
@@ -657,7 +682,7 @@ if __name__ == "__main__":
     # fig_2_phase_diagram_triangular(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram_triangular(save=True)
-    # print("Generating figure 4 phase diagram...")
+    print("Generating figure 4 phase diagram...")
     fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
     print("All figures generated.")
 
