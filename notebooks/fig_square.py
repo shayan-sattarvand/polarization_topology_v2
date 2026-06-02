@@ -718,6 +718,6 @@ if __name__ == "__main__":
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
     print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)

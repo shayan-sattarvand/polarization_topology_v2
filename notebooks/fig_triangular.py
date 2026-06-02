@@ -330,6 +330,62 @@ class TriangleWheelTiling:
                 loc2 = dsu.find((i + 1) % 6 + 1)
                 if loc2 == center_loc and loc == center_loc and wheel_rep & (1 << (5 - i)):
                     wheel_rep -= 1 << (5 - i)
+        #ugh now time to check zig-zags
+        if (inter_wheel & 5) == 5 and dsu.query(1, 3) and dsu.query(4, 6): # zigzag consisting of horiz and diag2
+            inter_wheel_new -= 5
+            path_loc = dsu.find(1)
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+            path_loc = dsu.find(4)
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+        if (inter_wheel & 3) == 3 and dsu.query(2, 6) and dsu.query(3, 5): # zigzag consisting of diag1 and diag2
+            inter_wheel_new -= 3
+            path_loc = dsu.find(2) 
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+            path_loc = dsu.find(3)
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+        if (inter_wheel & 6) == 6 and dsu.query(2, 4) and dsu.query(1, 5): # zigzag consisting of horiz and diag2
+            inter_wheel_new -= 6
+            path_loc = dsu.find(1) 
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+            path_loc = dsu.find(4)
+            for i in range(6):
+                loc = dsu.find(i + 1)
+                if loc == path_loc and wheel_rep & (1 << (11 - i)):
+                    wheel_rep -= 1 << (11 - i)
+                loc2 = dsu.find((i + 1) % 6 + 1)
+                if loc2 == path_loc and loc == path_loc and wheel_rep & (1 << (5 - i)):
+                    wheel_rep -= 1 << (5 - i)
+
             
         dsu_now = DisjointSetUnion(7)
         for i in range(6):
@@ -347,7 +403,17 @@ class TriangleWheelTiling:
         e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
         v = 7
         c = self.cc_density()
-        return max(0, e - v + c)
+        t = self.num_triangles()
+        return max(0, e - v + c - t)
+    
+    def num_triangles(self):
+        bin_rep = f'{self.binary_representation():15b}'[:-3]  # first 12 bits are the wheel, next 3 bits are the between-wheel connections
+        count = 0
+        for i in range(6):
+            if bin_rep[i] == '1' and bin_rep[(i + 1) % 6] == '1' and bin_rep[6 + i] == '1':
+                count += 1
+        return count
+
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=6 spokes and spoke angles 30 degrees, but with different center angles.'''
@@ -591,8 +657,8 @@ if __name__ == "__main__":
     # fig_2_phase_diagram_triangular(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram_triangular(save=True)
-    print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    # print("Generating figure 4 phase diagram...")
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
     print("All figures generated.")
 
 
