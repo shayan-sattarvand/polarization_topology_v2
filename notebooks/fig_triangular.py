@@ -33,6 +33,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Circle, FancyArrowPatch, FancyBboxPatch
 from scipy.ndimage import label as ndlabel
+from multiprocessing import Pool
 
 from phase_diagram import (
     topological_leverage,
@@ -571,6 +572,10 @@ def fig_2_5_phase_diagram_triangular(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_5_phase_diagram.png"), dpi=300)
 
+def find_val(theta_c, ns_angle, ew_angle):
+    grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
+    return grid.beta1_density()
+
 def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
@@ -589,11 +594,16 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             NS_angles = ns_angle_degrees * DEG
             EW_angles = ew_angle_degrees * DEG
             NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
-            beta1_values = np.zeros_like(NS_grid, dtype=int)
-            for i in range(NS_grid.shape[0]):
-                for j in range(NS_grid.shape[1]):
-                    grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 3)
-                    beta1_values[i, j] = grid.beta1_density()
+
+            # beta1_values = np.zeros_like(NS_grid, dtype=int)
+            # for i in range(NS_grid.shape[0]):
+            #     for j in range(NS_grid.shape[1]):
+            #         beta1_values[i, j] = find_val(theta_c, NS_grid[i, j], EW_grid[i, j])
+            with Pool() as pool:
+                args = [(theta_c, ns_angle, ew_angle) for ns_angle in NS_angles for ew_angle in EW_angles]
+                beta1_values_flat = pool.starmap(find_val, args)
+            beta1_values = np.transpose(np.array(beta1_values_flat).reshape(NS_grid.shape))
+
             panel_values.append(beta1_values)
         _save_fig4_cache(
             {

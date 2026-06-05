@@ -659,13 +659,12 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             NS_angles = ns_angle_degrees * DEG
             EW_angles = ew_angle_degrees * DEG
             NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
-            
+
             # beta1_values = np.zeros_like(NS_grid, dtype=int)
             # for i in range(NS_grid.shape[0]):
             #     for j in range(NS_grid.shape[1]):
             #         grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 2)
             #         beta1_values[i, j] = grid.beta1_density()
-            # panel_values.append(beta1_values)
             with Pool() as pool:
                 args = [(theta_c, ns_angle, ew_angle) for ns_angle in NS_angles for ew_angle in EW_angles]
                 beta1_values_flat = pool.starmap(find_val, args)
