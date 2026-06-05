@@ -47,6 +47,7 @@ from two_des import (
 )
 
 from fig_square import Wheel
+from cc_density import DisjointSetUnion, print_bin
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'kagome')
 os.makedirs(FIGURES_DIR, exist_ok=True)
@@ -74,7 +75,7 @@ def _load_fig4_cache():
     metadata_path, panel_paths = _fig4_cache_paths()
     with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
         metadata = json.load(metadata_file)
-    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=int) for panel_path in panel_paths]
+    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=float) for panel_path in panel_paths]
     return metadata, panel_values
 
 from math import sqrt
@@ -117,6 +118,9 @@ class KagomeWheelTiling:
         # Create edges between adjacent wheels
         btwn_wheel_connections = []
         self.active_btwn_wheel_edges = []
+        self.horiz_active = False
+        self.diag1_active = False
+        self.diag2_active = False
         for i in range((rows + 2) // 3): #Row 0, 3, 6, ... are the same, so we only need to loop through one of them and then repeat the pattern every 6 rows
             row = 3 * i
             for j in range(cols):
@@ -130,6 +134,7 @@ class KagomeWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((row, j, 1), (row + 1, j, 4)))
+                        self.horiz_active = True
                     btwn_wheel_connections.append(((row, j, 1), (row + 1, j, 4), J))  # connect spoke 1 of wheel (row, j) to spoke 4 of wheel (row + 1, j)
                 # Connection 2: diag right-up
                 if row < rows - 2:
@@ -141,6 +146,7 @@ class KagomeWheelTiling:
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                     if J < 0:
                         self.active_btwn_wheel_edges.append(((row, j, 2), (row + 2, j, 5)))
+                        self.diag1_active = True
                     btwn_wheel_connections.append(((row, j, 2), (row + 2, j, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 2, j)
         if rows > 1:
             for i in range((rows + 1) // 3): #Rows 1, 4, 7... 
@@ -156,6 +162,7 @@ class KagomeWheelTiling:
                         J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                         if J < 0:
                             self.active_btwn_wheel_edges.append(((row, j, 1), (row - 1, j + 1, 4)))
+                            self.horiz_active = True
                         btwn_wheel_connections.append(((row, j, 1), (row - 1, j + 1, 4), J))  # connect spoke 1 of wheel (row, j) to spoke 4 of wheel (row - 1, j + 1)
                     # Connection 2: diag left-up
                     if row != rows - 1:
@@ -167,6 +174,7 @@ class KagomeWheelTiling:
                         J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                         if J < 0:
                             self.active_btwn_wheel_edges.append(((row, j, 3), (row + 1, j, 6)))
+                            self.diag2_active = True
                         btwn_wheel_connections.append(((row, j, 3), (row + 1, j, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 1, j)
         if rows > 2:
             for i in range(rows // 3): #Rows 2, 5, 8... 
@@ -183,6 +191,7 @@ class KagomeWheelTiling:
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                             if J < 0:
                                 self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j, 5)))
+                                self.diag1_active = True
                             btwn_wheel_connections.append(((row, j, 2), (row + 1, j, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 1, j)
                         #Connection 2: diag left-up
                         if row < rows - 2 and j != 0:
@@ -194,8 +203,9 @@ class KagomeWheelTiling:
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                             if J < 0:
                                 self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j - 1, 6)))
+                                self.diag2_active = True
                             btwn_wheel_connections.append(((row, j, 3), (row + 2, j - 1, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 2, j - 1)
-                    else:
+                    else: #Connection 1: diag right-up
                         if row != rows - 1 and j < cols - 1:
                             wheel1 = self.wheels[row][j]
                             wheel2 = self.wheels[row + 1][j + 1] # Seems counterintuitive, but trust me bro
@@ -205,6 +215,7 @@ class KagomeWheelTiling:
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                             if J < 0:
                                 self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j + 1, 5)))
+                                self.diag1_active = True
                             btwn_wheel_connections.append(((row, j, 2), (row + 1, j + 1, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 1, j)
                         #Connection 2: diag left-up
                         if row < rows - 2:
@@ -216,6 +227,7 @@ class KagomeWheelTiling:
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
                             if J < 0:
                                 self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j, 6)))
+                                self.diag2_active = True
                             btwn_wheel_connections.append(((row, j, 3), (row + 2, j, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 2, j)
                     
 
@@ -339,6 +351,197 @@ class KagomeWheelTiling:
 
         active_edges = sum(len(wheel.active_edges) for row in self.wheels for wheel in row) + len(self.active_btwn_wheel_edges)
         return active_edges - len(active_nodes) + components
+    
+    def binary_representation(self):
+        rep = self.wheels[0][0].binary_representation()
+        for i in [self.horiz_active, self.diag1_active, self.diag2_active]:
+            rep = (rep << 1) | int(i)
+        return rep
+    
+    def cc_density(self, include_lone=True):
+        binary_representation = self.binary_representation()
+        inter_wheel = binary_representation % 8
+        binary_representation //= 8
+        intra_wheel = binary_representation
+        dsu = DisjointSetUnion(21) # we represent the structure as a triangle with 3 wheels. 
+        for i in range(6):
+            if intra_wheel & (1 << (5 - i)):
+                dsu.union(i + 1, (i + 1) % 6 + 1)
+                dsu.union(i + 8, (i + 1) % 6 + 8)
+                dsu.union(i + 15, (i + 1) % 6 + 15)
+            if intra_wheel & (1 << (11 - i)):
+                dsu.union(0, i + 1)
+                dsu.union(7, i + 8)
+                dsu.union(14, i + 15)
+        if inter_wheel & 1:
+            dsu.union(10, 20)
+        if inter_wheel & 2:
+            dsu.union(2, 19)
+        if inter_wheel & 4:
+            dsu.union(1, 11)
+        new_w1 = intra_wheel
+        new_w2 = intra_wheel
+        new_w3 = intra_wheel
+        new_inter = inter_wheel
+        if inter_wheel & 1 and dsu.query(13, 17):
+            path_loc = dsu.find(13)
+            for i in range(6): #check the first wheel
+                if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc:
+                    new_w1 &= ~(1 << (11 - i))
+                if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 6 + 1) == path_loc:
+                    new_w1 &= ~(1 << (5 - i))
+            for i in range(6): #check the second wheel
+                if dsu.find(i + 8) == path_loc and dsu.find(7) == path_loc:
+                    new_w2 &= ~(1 << (11 - i))
+                if dsu.find(i + 8) == path_loc and dsu.find((i + 1) % 6 + 8) == path_loc:
+                    new_w2 &= ~(1 << (5 - i))
+            for i in range(6): #check the third wheel
+                if dsu.find(i + 15) == path_loc and dsu.find(14) == path_loc:
+                    new_w3 &= ~(1 << (11 - i))
+                if dsu.find(i + 15) == path_loc and dsu.find((i + 1) % 6 + 15) == path_loc:
+                    new_w3 &= ~(1 << (5 - i))
+            # check inter-wheel connections
+            new_inter &= ~1
+            if dsu.find(2) == path_loc and dsu.find(19) == path_loc:
+                new_inter &= ~2
+            if dsu.find(1) == path_loc and dsu.find(11) == path_loc:
+                new_inter &= ~4
+        if inter_wheel & 2 and dsu.query(5, 16):
+            path_loc = dsu.find(16)
+            for i in range(6): #check the first wheel
+                if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc:
+                    new_w1 &= ~(1 << (11 - i))
+                if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 6 + 1) == path_loc:
+                    new_w1 &= ~(1 << (5 - i))
+            for i in range(6): #check the second wheel
+                if dsu.find(i + 8) == path_loc and dsu.find(7) == path_loc:
+                    new_w2 &= ~(1 << (11 - i))
+                if dsu.find(i + 8) == path_loc and dsu.find((i + 1) % 6 + 8) == path_loc:
+                    new_w2 &= ~(1 << (5 - i))
+            for i in range(6): #check the third wheel
+                if dsu.find(i + 15) == path_loc and dsu.find(14) == path_loc:
+                    new_w3 &= ~(1 << (11 - i))
+                if dsu.find(i + 15) == path_loc and dsu.find((i + 1) % 6 + 15) == path_loc:
+                    new_w3 &= ~(1 << (5 - i))
+            # check inter-wheel connections
+            new_inter &= ~2
+            if dsu.find(10) == path_loc and dsu.find(20) == path_loc:
+                new_inter &= ~1
+            if dsu.find(1) == path_loc and dsu.find(11) == path_loc:
+                new_inter &= ~4
+        if inter_wheel & 4 and dsu.query(4, 8):
+            path_loc = dsu.find(8)
+            for i in range(6): #check the first wheel
+                if dsu.find(i + 1) == path_loc and dsu.find(0) == path_loc:
+                    new_w1 &= ~(1 << (11 - i))
+                if dsu.find(i + 1) == path_loc and dsu.find((i + 1) % 6 + 1) == path_loc:
+                    new_w1 &= ~(1 << (5 - i))
+            for i in range(6): #check the second wheel
+                if dsu.find(i + 8) == path_loc and dsu.find(7) == path_loc:
+                    new_w2 &= ~(1 << (11 - i))
+                if dsu.find(i + 8) == path_loc and dsu.find((i + 1) % 6 + 8) == path_loc:
+                    new_w2 &= ~(1 << (5 - i))
+            for i in range(6): #check the third wheel
+                if dsu.find(i + 15) == path_loc and dsu.find(14) == path_loc:
+                    new_w3 &= ~(1 << (11 - i))
+                if dsu.find(i + 15) == path_loc and dsu.find((i + 1) % 6 + 15) == path_loc:
+                    new_w3 &= ~(1 << (5 - i))
+            # check inter-wheel connections
+            new_inter &= ~4
+            if dsu.find(10) == path_loc and dsu.find(20) == path_loc:
+                new_inter &= ~1
+            if dsu.find(2) == path_loc and dsu.find(19) == path_loc:
+                new_inter &= ~2
+        dsu_new = DisjointSetUnion(21) # we represent the structure as a triangle with 3 wheels. 
+        for i in range(6):
+            if new_w1 & (1 << (5 - i)):
+                dsu_new.union(i + 1, (i + 1) % 6 + 1)
+            if new_w2 & (1 << (5 - i)):
+                dsu_new.union(i + 8, (i + 1) % 6 + 8)
+            if new_w3 & (1 << (5 - i)):
+                dsu_new.union(i + 15, (i + 1) % 6 + 15)
+            if new_w1 & (1 << (11 - i)):
+                dsu_new.union(0, i + 1)
+            if new_w2 & (1 << (11 - i)):
+                dsu_new.union(7, i + 8)
+            if new_w3 & (1 << (11 - i)):
+                dsu_new.union(14, i + 15)
+        if new_inter & 1:
+            dsu_new.union(10, 20)
+        if new_inter & 2:
+            dsu_new.union(2, 19)
+        if new_inter & 4:
+            dsu_new.union(1, 11)
+        if inter_wheel & 1 and not dsu.query(13, 17):
+            dsu_new.union(13, 17)
+        if inter_wheel & 2 and not dsu.query(5, 16):
+            dsu_new.union(5, 16)
+        if inter_wheel & 4 and not dsu.query(4, 8):
+            dsu_new.union(4, 8)
+        if include_lone:
+            return 7 - self.connected_vertices() + dsu_new.connected_components_edges() / 3
+        else:
+            return dsu_new.connected_components_edges() / 3
+    
+    def connected_vertices(self):
+        wheel1 = self.wheels[3][1]
+        wheel2 = self.wheels[4][1]
+        wheel3 = self.wheels[5][1]
+        center_connected = [False] * 3
+        spoke_connected = [[False] * 6] * 3
+        for i in range(6): 
+            if (0, i + 1) in wheel1.active_edges:
+                center_connected[0] = True
+                spoke_connected[0][i] = True
+            if (0, i + 1) in wheel2.active_edges:
+                center_connected[1] = True
+                spoke_connected[1][i] = True
+            if (0, i + 1) in wheel3.active_edges:
+                center_connected[2] = True
+                spoke_connected[2][i] = True
+            if (i + 1, (i + 1) % 6 + 1) in wheel1.active_edges:
+                spoke_connected[0][i] = True
+                spoke_connected[1][i] = True
+                spoke_connected[2][i] = True
+                spoke_connected[0][(i + 1) % 6] = True
+                spoke_connected[1][(i + 1) % 6] = True
+                spoke_connected[2][(i + 1) % 6] = True
+            if self.horiz_active:
+                spoke_connected[0][0] = True
+                spoke_connected[1][0] = True
+                spoke_connected[0][3] = True
+                spoke_connected[1][3] = True
+            if self.diag1_active:
+                spoke_connected[0][1] = True
+                spoke_connected[2][1] = True
+                spoke_connected[0][4] = True
+                spoke_connected[2][4] = True
+        v = sum(center_connected) + sum([sum(i) for i in spoke_connected])
+        return v / 3
+    
+    def num_triangles(self):
+        bin_rep = f'{self.binary_representation():15b}'[:-3]  # first 12 bits are the wheel, next 3 bits are the between-wheel connections
+        count = 0
+        for i in range(6):
+            if bin_rep[i] == '1' and bin_rep[(i + 1) % 6] == '1' and bin_rep[6 + i] == '1':
+                count += 1
+        return count
+    
+    def beta1_density(self):
+        e = sum(1 for i in f'{self.wheels[0][0].binary_representation():b}' if i == '1')
+        e += 2 * sum([self.horiz_active, self.diag1_active, self.diag2_active]) / 3
+        v = 7
+        c = self.cc_density(include_lone=False)
+        t = self.num_triangles()
+        return max(0, e - v + c - t)
+        
+
+            
+                    
+
+
+
+
 
 
 def fig1(save=True):
@@ -417,8 +620,8 @@ def fig_2_phase_diagram_kagome(save=True):
     theta_c_values = np.linspace(0, 360, 200) * DEG
     spoke_angles = np.linspace(0, 360, 200) * DEG
     Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
-    beta0_values = np.zeros_like(Theta_C, dtype=int)
-    beta1_values = np.zeros_like(Theta_C, dtype=int)
+    beta0_values = np.zeros_like(Theta_C, dtype=float)
+    beta1_values = np.zeros_like(Theta_C, dtype=float)
 
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
@@ -447,8 +650,8 @@ def fig_2_5_phase_diagram_kagome(save=True):
     theta_c_values = np.linspace(0, 360, 200) * DEG
     spoke_angles = np.linspace(0, 360, 200) * DEG
     Theta_C, Spoke_Angle = np.meshgrid(theta_c_values, spoke_angles)
-    beta0_values = np.zeros_like(Theta_C, dtype=int)
-    beta1_values = np.zeros_like(Theta_C, dtype=int)
+    beta0_values = np.zeros_like(Theta_C, dtype=float)
+    beta1_values = np.zeros_like(Theta_C, dtype=float)
 
     for i in range(Theta_C.shape[0]):
         for j in range(Theta_C.shape[1]):
@@ -490,11 +693,11 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             NS_angles = ns_angle_degrees * DEG
             EW_angles = ew_angle_degrees * DEG
             NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
-            beta1_values = np.zeros_like(NS_grid, dtype=int)
+            beta1_values = np.zeros_like(NS_grid, dtype=float)
             for i in range(NS_grid.shape[0]):
                 for j in range(NS_grid.shape[1]):
-                    grid = KagomeWheelTiling(rows=12, cols=6, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 3)
-                    beta1_values[i, j] = grid.beta1()
+                    grid = KagomeWheelTiling(rows=8, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [NS_grid[i, j], EW_grid[i, j]] * 3)
+                    beta1_values[i, j] = grid.beta1_density()
             panel_values.append(beta1_values)
         _save_fig4_cache(
             {
@@ -542,12 +745,15 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             ax_grid.set_aspect('equal')
             ax_grid.axis('off')
             ax_grid.set_title(
-                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\\n$\\beta_0 = {}$, $\\beta_1 = {}$".format(
+                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\n$\\beta_0 = {}$, $\\beta_1 = {}$, $v_c = {}$, $\\rho_0 = {}$, $\\rho_1 = {}$".format(
                     theta_c / DEG,
                     event.xdata,
                     event.ydata,
                     grid.beta0(),
                     grid.beta1(),
+                    grid.connected_vertices(),
+                    grid.cc_density(),
+                    grid.beta1_density(),
                 )
             )
             fig_grid.tight_layout()
@@ -562,6 +768,34 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
     elif show and not backend_is_interactive:
         print("Interactive display skipped because matplotlib backend is non-interactive:", matplotlib.get_backend())
 
+def test_cc(angles):
+    grid = KagomeWheelTiling(
+        rows=12,
+        cols=6,
+        separation=3.0,
+        scale=1.0,
+        angles=angles,
+    )
+    fig_grid, ax_grid = plt.subplots(figsize=(8, 8))
+    grid.render_grid(ax_grid, draw_dipoles=True)
+    ax_grid.set_aspect('equal')
+    ax_grid.axis('off')
+    ax_grid.set_title(
+        "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\n$\\beta_0 = {}$, $\\beta_1 = {}$, $v_c = {}$, $\\rho_0 = {}$, $\\rho_1 = {}$".format(
+            angles[0] / DEG,
+            angles[1] / DEG,
+            angles[2] / DEG,
+            grid.beta0(),
+            grid.beta1(),
+            grid.connected_vertices(),
+            grid.cc_density(),
+            grid.beta1_density()
+        )
+    )
+    fig_grid.tight_layout()
+    fig_grid.show()
+    plt.show()
+    
 
 
 if __name__ == "__main__":
@@ -574,7 +808,8 @@ if __name__ == "__main__":
     # print("Generating Fig 2.5 phase diagram...")
     # fig_2_5_phase_diagram_kagome()
     print("Generating Fig 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    # test_cc([0] + [276.1 * DEG, 37.9 * DEG] * 3)
 
 
 
