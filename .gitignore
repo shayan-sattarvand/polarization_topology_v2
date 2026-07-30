@@ -220,3 +220,5 @@ __marimo__/
 # Stuff in the figures directory
 figures/*
 
+#VSCode settings
+.vscode/
