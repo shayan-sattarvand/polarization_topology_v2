@@ -78,7 +78,7 @@ def _load_fig4_cache():
 
 
 class Wheel: 
-    def __init__(self, center, scale, n=4, angles = None, offset = 0):
+    def __init__(self, center: tuple[float, float], scale: float, n: int =4, angles: list[float] = None, offset: float = 0):
         '''Class representing a wheel graph with n spokes. The center is at `center`, 
         the radius is `scale`, and the angles of the center + spokes can be specified by `angles`.
         If `active_edges` is provided, only those edges will be considered active; otherwise, all 
@@ -494,6 +494,12 @@ class SquareWheelGrid:
             v += 1
         v += sum(spoke_connected)
         return v
+    
+    def euler_characteristic_density(self):
+        e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
+        v = 5
+        t = self.num_triangles()
+        return v - e + t
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=4 spokes and spoke angles 45 degrees, but with different center angles.'''
@@ -638,13 +644,13 @@ def fig_2_5_phase_diagram(save=True):
 
 def find_val(theta_c, ns_angle, ew_angle):
     grid = SquareWheelGrid(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 2)
-    val = grid.beta1_density()
+    val = grid.euler_characteristic_density()
     return val
 
 def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
-    theta_c_degrees = [10, 45, 80, 90]
+    theta_c_degrees = [0, 10, 45, 80]
     ns_angle_degrees = np.linspace(0, 360, 200)
     ew_angle_degrees = np.linspace(0, 360, 200)
     if preprocessed:
