@@ -56,6 +56,8 @@ FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
 os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
+NEW_J_CONDITION = True
+J_SQUARED_THRESHOLD = 1
 
 
 def _fig4_cache_paths():
@@ -133,9 +135,14 @@ class KagomeWheelTiling:
                     phi2 = wheel2.spoke_angles[3]
                     theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[0][1], wheel2.spokes[3][0] - wheel1.spokes[0][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((row, j, 1), (row + 1, j, 4)))
-                        self.horiz_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((row, j, 1), (row + 1, j, 4)))
+                            self.horiz_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((row, j, 1), (row + 1, j, 4)))
+                            self.horiz_active = True
                     btwn_wheel_connections.append(((row, j, 1), (row + 1, j, 4), J))  # connect spoke 1 of wheel (row, j) to spoke 4 of wheel (row + 1, j)
                 # Connection 2: diag right-up
                 if row < rows - 2:
@@ -145,9 +152,14 @@ class KagomeWheelTiling:
                     phi2 = wheel2.spoke_angles[4]
                     theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((row, j, 2), (row + 2, j, 5)))
-                        self.diag1_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((row, j, 2), (row + 2, j, 5)))
+                            self.diag1_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((row, j, 2), (row + 2, j, 5)))
+                            self.diag1_active = True
                     btwn_wheel_connections.append(((row, j, 2), (row + 2, j, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 2, j)
         if rows > 1:
             for i in range((rows + 1) // 3): #Rows 1, 4, 7... 
@@ -161,9 +173,14 @@ class KagomeWheelTiling:
                         phi2 = wheel2.spoke_angles[3]
                         theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[0][1], wheel2.spokes[3][0] - wheel1.spokes[0][0])
                         J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                        if J < 0:
-                            self.active_btwn_wheel_edges.append(((row, j, 1), (row - 1, j + 1, 4)))
-                            self.horiz_active = True
+                        if NEW_J_CONDITION:
+                            if J ** 2 > J_SQUARED_THRESHOLD:
+                                self.active_btwn_wheel_edges.append(((row, j, 1), (row - 1, j + 1, 4)))
+                                self.horiz_active = True
+                        else:
+                            if J < 0:
+                                self.active_btwn_wheel_edges.append(((row, j, 1), (row - 1, j + 1, 4)))
+                                self.horiz_active = True
                         btwn_wheel_connections.append(((row, j, 1), (row - 1, j + 1, 4), J))  # connect spoke 1 of wheel (row, j) to spoke 4 of wheel (row - 1, j + 1)
                     # Connection 2: diag left-up
                     if row != rows - 1:
@@ -173,9 +190,14 @@ class KagomeWheelTiling:
                         phi2 = wheel2.spoke_angles[5]
                         theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
                         J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                        if J < 0:
-                            self.active_btwn_wheel_edges.append(((row, j, 3), (row + 1, j, 6)))
-                            self.diag2_active = True
+                        if NEW_J_CONDITION:
+                            if J ** 2 > J_SQUARED_THRESHOLD:
+                                self.active_btwn_wheel_edges.append(((row, j, 3), (row + 1, j, 6)))
+                                self.diag2_active = True
+                        else:
+                            if J < 0:
+                                self.active_btwn_wheel_edges.append(((row, j, 3), (row + 1, j, 6)))
+                                self.diag2_active = True
                         btwn_wheel_connections.append(((row, j, 3), (row + 1, j, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 1, j)
         if rows > 2:
             for i in range(rows // 3): #Rows 2, 5, 8... 
@@ -190,9 +212,14 @@ class KagomeWheelTiling:
                             phi2 = wheel2.spoke_angles[4]
                             theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                            if J < 0:
-                                self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j, 5)))
-                                self.diag1_active = True
+                            if NEW_J_CONDITION:
+                                if J ** 2 > J_SQUARED_THRESHOLD:
+                                    self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j, 5)))
+                                    self.diag1_active = True
+                            else:
+                                if J < 0:
+                                    self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j, 5)))
+                                    self.diag1_active = True
                             btwn_wheel_connections.append(((row, j, 2), (row + 1, j, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 1, j)
                         #Connection 2: diag left-up
                         if row < rows - 2 and j != 0:
@@ -202,9 +229,14 @@ class KagomeWheelTiling:
                             phi2 = wheel2.spoke_angles[5]
                             theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                            if J < 0:
-                                self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j - 1, 6)))
-                                self.diag2_active = True
+                            if NEW_J_CONDITION:
+                                if J ** 2 > J_SQUARED_THRESHOLD:
+                                    self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j - 1, 6)))
+                                    self.diag2_active = True
+                            else:
+                                if J < 0:
+                                    self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j - 1, 6)))
+                                    self.diag2_active = True
                             btwn_wheel_connections.append(((row, j, 3), (row + 2, j - 1, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 2, j - 1)
                     else: #Connection 1: diag right-up
                         if row != rows - 1 and j < cols - 1:
@@ -214,9 +246,14 @@ class KagomeWheelTiling:
                             phi2 = wheel2.spoke_angles[4]
                             theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                            if J < 0:
-                                self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j + 1, 5)))
-                                self.diag1_active = True
+                            if NEW_J_CONDITION:
+                                if J ** 2 > J_SQUARED_THRESHOLD:
+                                    self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j + 1, 5)))
+                                    self.diag1_active = True
+                            else:
+                                if J < 0:
+                                    self.active_btwn_wheel_edges.append(((row, j, 2), (row + 1, j + 1, 5)))
+                                    self.diag1_active = True
                             btwn_wheel_connections.append(((row, j, 2), (row + 1, j + 1, 5), J))  # connect spoke 2 of wheel (row, j) to spoke 5 of wheel (row + 1, j)
                         #Connection 2: diag left-up
                         if row < rows - 2:
@@ -226,9 +263,14 @@ class KagomeWheelTiling:
                             phi2 = wheel2.spoke_angles[5]
                             theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
                             J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                            if J < 0:
-                                self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j, 6)))
-                                self.diag2_active = True
+                            if NEW_J_CONDITION:
+                                if J ** 2 > J_SQUARED_THRESHOLD:
+                                    self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j, 6)))
+                                    self.diag2_active = True
+                            else:
+                                if J < 0:
+                                    self.active_btwn_wheel_edges.append(((row, j, 3), (row + 2, j, 6)))
+                                    self.diag2_active = True
                             btwn_wheel_connections.append(((row, j, 3), (row + 2, j, 6), J))  # connect spoke 3 of wheel (row, j) to spoke 6 of wheel (row + 2, j)
                     
 

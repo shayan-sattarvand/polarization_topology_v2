@@ -49,6 +49,8 @@ FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'hexagona
 os.makedirs(FIGURES_DIR, exist_ok=True)
 
 K_s = 1.0
+NEW_J_CONDITION = True
+J_SQUARED_THRESHOLD = 1
 
 class HexagonalWheelTiling:
     def __init__(self, rows, cols, separation=3.0, scale=1.0, angles=None):
@@ -85,9 +87,14 @@ class HexagonalWheelTiling:
                     phi2 = wheel2.spoke_angles[1]
                     theta_ij = np.arctan2(wheel2.spokes[1][1] - wheel1.spokes[0][1], wheel2.spokes[1][0] - wheel1.spokes[0][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, 2 * j + 1, 1), (i, 2 * j + 2, 2)))
-                        self.horiz_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, 2 * j + 1, 1), (i, 2 * j + 2, 2)))
+                            self.horiz_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, 2 * j + 1, 1), (i, 2 * j + 2, 2)))
+                            self.horiz_active = True
                     btwn_wheel_connections.append((
                         (i, 2 * j + 1, 1),  # wheel on the left
                         (i, 2 * j + 2, 2),   # wheel on the right
@@ -102,9 +109,14 @@ class HexagonalWheelTiling:
                     phi2 = wheel2.spoke_angles[1]
                     theta_ij = np.arctan2(wheel2.spokes[1][1] - wheel1.spokes[0][1], wheel2.spokes[1][0] - wheel1.spokes[0][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, 2 * j, 1), (i, 2 * j + 1, 2)))
-                        self.horiz_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, 2 * j, 1), (i, 2 * j + 1, 2)))
+                            self.horiz_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, 2 * j, 1), (i, 2 * j + 1, 2)))
+                            self.horiz_active = True
                     btwn_wheel_connections.append((
                         (i, 2 * j, 1),      # wheel on the left
                         (i, 2 * j + 1, 2),   # wheel on the right
@@ -122,9 +134,14 @@ class HexagonalWheelTiling:
                     phi2 = wheel2.spoke_angles[2]
                     theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[0][1], wheel2.spokes[2][0] - wheel1.spokes[0][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 1), (i + 1, j, 3)))
-                        self.diag1_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 1), (i + 1, j, 3)))
+                            self.diag1_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 1), (i + 1, j, 3)))
+                            self.diag1_active = True
                     btwn_wheel_connections.append((
                         (i, j, 1),          # wheel on the bottom
                         (i + 1, j, 3),       # wheel on the top
@@ -142,9 +159,14 @@ class HexagonalWheelTiling:
                     phi2 = wheel2.spoke_angles[2]
                     theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[1][1], wheel2.spokes[2][0] - wheel1.spokes[1][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 3)))
-                        self.diag2_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 3)))
+                            self.diag2_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 3)))
+                            self.diag2_active = True
         self.btwn_wheel_connections = btwn_wheel_connections
     
     def render_grid(self, ax, draw_dipoles=False):

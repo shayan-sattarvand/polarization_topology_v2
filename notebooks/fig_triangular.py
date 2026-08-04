@@ -69,6 +69,8 @@ FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
 os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
+NEW_J_CONDITION = True
+J_SQUARED_THRESHOLD = 1
 
 
 def _fig4_cache_paths():
@@ -120,9 +122,14 @@ class TriangleWheelTiling:
                 phi2 = wheel2.spoke_angles[3]
                 theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[0][1], wheel2.spokes[3][0] - wheel1.spokes[0][0])
                 J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                if J < 0:
-                    self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 4)))
-                    self.horiz_active = True
+                if NEW_J_CONDITION:
+                    if J ** 2 > J_SQUARED_THRESHOLD:
+                        self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 4)))
+                        self.horiz_active = True
+                else:
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 4)))
+                        self.horiz_active = True
                 btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 4), J))  # connect spoke 1 of wheel (i, j) to spoke 4 of wheel (i, j + 1)
         # Then diagonal right-up
         for i in range(rows - 1):
@@ -136,9 +143,14 @@ class TriangleWheelTiling:
                     phi2 = wheel2.spoke_angles[4]
                     theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 5)))
-                        self.diag1_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 5)))
+                            self.diag1_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 5)))
+                            self.diag1_active = True
                     btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 5), J))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
                 else:
                     wheel1 = self.wheels[i][j]
@@ -147,9 +159,14 @@ class TriangleWheelTiling:
                     phi2 = wheel2.spoke_angles[4]
                     theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j + 1, 5)))
-                        self.diag1_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j + 1, 5)))
+                            self.diag1_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j + 1, 5)))
+                            self.diag1_active = True
                     btwn_wheel_connections.append(((i, j, 2), (i + 1, j + 1, 5), J))  # connect spoke 2 of wheel (i, j) to spoke 5 of wheel above-right
         # Then diagonal left-up
         for i in range(rows - 1):
@@ -163,9 +180,14 @@ class TriangleWheelTiling:
                     phi2 = wheel2.spoke_angles[5]
                     theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j - 1, 6)))
-                        self.diag2_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j - 1, 6)))
+                            self.diag2_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j - 1, 6)))
+                            self.diag2_active = True
                     btwn_wheel_connections.append(((i, j, 3), (i + 1, j - 1, 6), J))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
                 else:
                     wheel1 = self.wheels[i][j]
@@ -174,9 +196,14 @@ class TriangleWheelTiling:
                     phi2 = wheel2.spoke_angles[5]
                     theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
                     J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                    if J < 0:
-                        self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j, 6)))
-                        self.diag2_active = True
+                    if NEW_J_CONDITION:
+                        if J ** 2 > J_SQUARED_THRESHOLD:
+                            self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j, 6)))
+                            self.diag2_active = True
+                    else:
+                        if J < 0:
+                            self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j, 6)))
+                            self.diag2_active = True
                     btwn_wheel_connections.append(((i, j, 3), (i + 1, j, 6), J))  # connect spoke 3 of wheel (i, j) to spoke 6 of wheel above-left
         self.btwn_wheel_connections = btwn_wheel_connections
 
