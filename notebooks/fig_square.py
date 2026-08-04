@@ -53,6 +53,8 @@ FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
 os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
+NEW_J_CONDITION = True
+J_SQUARED_THRESHOLD = 1
 
 
 def _fig4_cache_paths():
@@ -103,14 +105,22 @@ class Wheel:
             phi_j = self.spoke_angles[i]
             J = frenkel_coupling(self.center_angle, phi_j, self.angle_step * i + self.offset, 1)
             all_edges.append((0, i + 1, J))
-            if J < 0:
-                active_edges.append((0, i + 1))
+            if NEW_J_CONDITION:
+                if J ** 2 > J_SQUARED_THRESHOLD:
+                    active_edges.append((0, i + 1))
+            else:
+                if J < 0:
+                    active_edges.append((0, i + 1))
         for i in range(self.n): # between adjacent spokes
             theta_ij = np.arctan2(self.spokes[(i+1)%self.n][1] - self.spokes[i][1], self.spokes[(i+1)%self.n][0] - self.spokes[i][0])
             J = frenkel_coupling(self.spoke_angles[i], self.spoke_angles[(i + 1) % self.n], theta_ij, 1)
             all_edges.append((i + 1, (i + 1) % self.n + 1, J))
-            if J < 0:
-                active_edges.append((i + 1, (i + 1) % self.n + 1))
+            if NEW_J_CONDITION:
+                if J ** 2 > J_SQUARED_THRESHOLD:
+                    active_edges.append((i + 1, (i + 1) % self.n + 1))
+            else: 
+                if J < 0:
+                    active_edges.append((i + 1, (i + 1) % self.n + 1))
         self.active_edges = active_edges
         self.all_edges = all_edges
         
@@ -208,6 +218,18 @@ class Wheel:
             binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
         return binary
 
+    def construct_hamiltonian(self, epsilon=0):
+        '''Construct the Hamiltonian matrix for the wheel graph.
+        Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
+        '''
+        matrix = np.diag([epsilon] * (self.n + 1))  # set diagonal to epsilon
+
+        for u, v, J in self.all_edges:
+            matrix[u, v] = min(0, J)
+            matrix[v, u] = min(0, J)
+
+        return matrix
+
 class SquareWheelGrid:
     def __init__(self, rows, cols, separation=3, scale=1, angles=None):
         '''Class representing a grid of wheels with n=4 spokes. Each wheel is represented by an instance of the `Wheel` class.'''
@@ -235,9 +257,14 @@ class SquareWheelGrid:
                 phi2 = wheel2.spoke_angles[2]  # spoke 3 of wheel 2
                 theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[0][1], wheel2.spokes[2][0] - wheel1.spokes[0][0])
                 J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                if J < 0:
-                    self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
-                    self.horiz_active = True
+                if NEW_J_CONDITION: 
+                    if J ** 2 > J_SQUARED_THRESHOLD:
+                        self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
+                        self.horiz_active = True
+                else:
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
+                        self.horiz_active = True
                 btwn_wheel_connections.append(((i, j, 1), (i, j + 1, 3), J))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
         # Then vertical
         for i in range(rows - 1):
@@ -248,9 +275,14 @@ class SquareWheelGrid:
                 phi2 = wheel2.spoke_angles[3]  # spoke 4 of wheel 2
                 theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[1][1], wheel2.spokes[3][0] - wheel1.spokes[1][0])
                 J = frenkel_coupling(phi1, phi2, theta_ij, 1)
-                if J < 0:
-                    self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
-                    self.vert_active = True
+                if NEW_J_CONDITION:
+                    if J ** 2 > J_SQUARED_THRESHOLD:
+                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
+                        self.vert_active = True
+                else:
+                    if J < 0:
+                        self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
+                        self.vert_active = True
                 btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 4), J))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
         self.btwn_wheel_connections = btwn_wheel_connections
 
@@ -785,6 +817,6 @@ if __name__ == "__main__":
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
     print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
