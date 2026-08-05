@@ -104,7 +104,7 @@ class Wheel:
         all_edges = []
         for i in range(self.n): # between center and spokes
             phi_j = self.spoke_angles[i]
-            J = frenkel_coupling(self.center_angle, phi_j, self.angle_step * i + self.offset, 1)
+            J = frenkel_coupling(self.center_angle, phi_j, self.angle_step * i + self.offset, scale)
             all_edges.append((0, i + 1, J))
             if NEW_J_CONDITION:
                 if J ** 2 > J_SQUARED_THRESHOLD:
@@ -114,7 +114,7 @@ class Wheel:
                     active_edges.append((0, i + 1))
         for i in range(self.n): # between adjacent spokes
             theta_ij = np.arctan2(self.spokes[(i+1)%self.n][1] - self.spokes[i][1], self.spokes[(i+1)%self.n][0] - self.spokes[i][0])
-            J = frenkel_coupling(self.spoke_angles[i], self.spoke_angles[(i + 1) % self.n], theta_ij, 1)
+            J = frenkel_coupling(self.spoke_angles[i], self.spoke_angles[(i + 1) % self.n], theta_ij, np.sqrt(2 - 2 * np.cos(2 * np.pi / self.n)) * scale)
             all_edges.append((i + 1, (i + 1) % self.n + 1, J))
             if NEW_J_CONDITION:
                 if J ** 2 > J_SQUARED_THRESHOLD:
@@ -323,7 +323,7 @@ class SquareWheelGrid:
                 phi1 = wheel1.spoke_angles[0]  # spoke 1 of wheel 1
                 phi2 = wheel2.spoke_angles[2]  # spoke 3 of wheel 2
                 theta_ij = np.arctan2(wheel2.spokes[2][1] - wheel1.spokes[0][1], wheel2.spokes[2][0] - wheel1.spokes[0][0])
-                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                 if NEW_J_CONDITION: 
                     if J ** 2 > J_SQUARED_THRESHOLD:
                         self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 3)))  # connect spoke 1 of wheel (i, j) to spoke 3 of wheel (i, j + 1)
@@ -341,7 +341,7 @@ class SquareWheelGrid:
                 phi1 = wheel1.spoke_angles[1]  # spoke 2 of wheel 1
                 phi2 = wheel2.spoke_angles[3]  # spoke 4 of wheel 2
                 theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[1][1], wheel2.spokes[3][0] - wheel1.spokes[1][0])
-                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                 if NEW_J_CONDITION:
                     if J ** 2 > J_SQUARED_THRESHOLD:
                         self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 4)))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)

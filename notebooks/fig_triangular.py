@@ -121,7 +121,7 @@ class TriangleWheelTiling:
                 phi1 = wheel1.spoke_angles[0]
                 phi2 = wheel2.spoke_angles[3]
                 theta_ij = np.arctan2(wheel2.spokes[3][1] - wheel1.spokes[0][1], wheel2.spokes[3][0] - wheel1.spokes[0][0])
-                J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                 if NEW_J_CONDITION:
                     if J ** 2 > J_SQUARED_THRESHOLD:
                         self.active_btwn_wheel_edges.append(((i, j, 1), (i, j + 1, 4)))
@@ -142,7 +142,7 @@ class TriangleWheelTiling:
                     phi1 = wheel1.spoke_angles[1]
                     phi2 = wheel2.spoke_angles[4]
                     theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
-                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                     if NEW_J_CONDITION:
                         if J ** 2 > J_SQUARED_THRESHOLD:
                             self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j, 5)))
@@ -158,7 +158,7 @@ class TriangleWheelTiling:
                     phi1 = wheel1.spoke_angles[1]
                     phi2 = wheel2.spoke_angles[4]
                     theta_ij = np.arctan2(wheel2.spokes[4][1] - wheel1.spokes[1][1], wheel2.spokes[4][0] - wheel1.spokes[1][0])
-                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                     if NEW_J_CONDITION:
                         if J ** 2 > J_SQUARED_THRESHOLD:
                             self.active_btwn_wheel_edges.append(((i, j, 2), (i + 1, j + 1, 5)))
@@ -179,7 +179,7 @@ class TriangleWheelTiling:
                     phi1 = wheel1.spoke_angles[2]
                     phi2 = wheel2.spoke_angles[5]
                     theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
-                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                     if NEW_J_CONDITION:
                         if J ** 2 > J_SQUARED_THRESHOLD:
                             self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j - 1, 6)))
@@ -195,7 +195,7 @@ class TriangleWheelTiling:
                     phi1 = wheel1.spoke_angles[2]
                     phi2 = wheel2.spoke_angles[5]
                     theta_ij = np.arctan2(wheel2.spokes[5][1] - wheel1.spokes[2][1], wheel2.spokes[5][0] - wheel1.spokes[2][0])
-                    J = frenkel_coupling(phi1, phi2, theta_ij, 1)
+                    J = frenkel_coupling(phi1, phi2, theta_ij, separation - 2 * scale)
                     if NEW_J_CONDITION:
                         if J ** 2 > J_SQUARED_THRESHOLD:
                             self.active_btwn_wheel_edges.append(((i, j, 3), (i + 1, j, 6)))
