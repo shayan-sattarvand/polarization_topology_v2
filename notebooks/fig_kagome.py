@@ -563,6 +563,7 @@ class KagomeWheelTiling:
         return v / 3
     
     def num_triangles(self):
+        '''Count the number of triangles in the tiling.'''
         bin_rep = f'{self.binary_representation():15b}'[:-3]  # first 12 bits are the wheel, next 3 bits are the between-wheel connections
         count = 0
         for i in range(6):
@@ -577,6 +578,13 @@ class KagomeWheelTiling:
         c = self.cc_density(include_lone=False)
         t = self.num_triangles()
         return max(0, e - v + c - t)
+
+    def euler_characteristic_density(self):
+        '''Calculate the Euler characteristic of the tiling based on active edges.'''
+        e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
+        v = 7
+        t = self.num_triangles()
+        return v - e + t
         
 
             
@@ -720,7 +728,7 @@ def fig_2_5_phase_diagram_kagome(save=True):
 
 def find_val(theta_c, ns_angle, ew_angle):
     grid = KagomeWheelTiling(rows=8, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
-    return grid.beta1_density()
+    return grid.euler_characteristic_density()
 
 def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 12x6 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''

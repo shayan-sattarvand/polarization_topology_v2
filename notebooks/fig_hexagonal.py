@@ -379,10 +379,28 @@ class HexagonalWheelTiling:
         return dsu_now.connected_components_edges() / 2 # divide by 2 to account for the fact that we modeled the hex lattice as a rhombic lattice with 2 horizontally adjacent wheels = 1 vertex
     
     def beta1_density(self):
-        e = sum(1 for i in str(self.binary_representation) if i == '1') / 2
+        e = sum(1 for i in str(self.binary_representation()) if i == '1') / 2
         v = 4
         c = self.cc_density()
         return (e - v + c)
+
+    def euler_characteristic_density(self):
+        '''Calculate the Euler characteristic density of the tiling based on active edges.'''
+        e = sum(1 for i in f'{self.binary_representation():b}' if i == '1') / 2
+        v = 4
+        t = self.num_triangles()
+        return v - e + t
+
+    def num_triangles(self):
+        bin_rep = f'{self.binary_representation():15b}'[:-3]  # first 12 bits are the wheels, next 3 bits are the between-wheel connections
+        count = 0
+        for i in range(3):
+            if bin_rep[i] == '1' and bin_rep[(i + 1) % 3] == '1' and bin_rep[3 + i] == '1':
+                count += 1
+        for i in range(3):
+            if bin_rep[6 + i] == '1' and bin_rep[6 + (i + 1) % 3] == '1' and bin_rep[9 + i] == '1':
+                count += 1
+        return count / 2
 
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=3 spokes and spoke angles 60 degrees, but with different center angles.'''
