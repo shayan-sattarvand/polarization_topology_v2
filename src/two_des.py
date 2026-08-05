@@ -462,7 +462,7 @@ def linear_absorption(energies, mu_x, mu_y, gamma=0.05, n_omega=500, omega_range
     omega = np.linspace(omega_range[0], omega_range[1], n_omega)
     spectrum = np.zeros(n_omega)
     for E, f in zip(energies, osc):
-        spectrum += f * _lorentzian(omega, E, gamma)
+        spectrum += f * lorentzian(omega, E, gamma)
 
     return omega, spectrum
 
@@ -527,8 +527,8 @@ def two_des_spectrum(energies, mu_x, mu_y, gamma=0.05, n_omega=150,
         raise ValueError(f"Unknown polarisation sequence: {sequence!r}")
 
     # Precompute Lorentzians for all states on each axis
-    L1 = np.stack([_lorentzian(omega1, E, gamma) for E in energies])  # (N, n_omega)
-    L3 = np.stack([_lorentzian(omega3, E, gamma) for E in energies])  # (N, n_omega)
+    L1 = np.stack([lorentzian(omega1, E, gamma) for E in energies])  # (N, n_omega)
+    L3 = np.stack([lorentzian(omega3, E, gamma) for E in energies])  # (N, n_omega)
 
     # Outer-product accumulation: faster than a double Python loop for typical N
     spectrum = np.einsum('a,b,ai,bj->ij', amp_a, amp_b, L1, L3)
