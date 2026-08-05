@@ -43,6 +43,7 @@ from two_des import (
     solve_w4,
     w4_couplings,
     symmetric_block,
+    lorentzian,
 )
 
 from cc_density import DisjointSetUnion
@@ -218,17 +219,83 @@ class Wheel:
             binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
         return binary
 
-    def construct_hamiltonian(self, epsilon=0):
+    def construct_hamiltonian(self, epsilon=1):
         '''Construct the Hamiltonian matrix for the wheel graph.
         Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
         '''
         matrix = np.diag([epsilon] * (self.n + 1))  # set diagonal to epsilon
 
         for u, v, J in self.all_edges:
-            matrix[u, v] = min(0, J)
-            matrix[v, u] = min(0, J)
+            matrix[u, v] = J
+            matrix[v, u] = J
 
         return matrix
+
+    def compute_eigen(self, epsilon=1):
+        '''Compute the eigenvalues and eigenvectors of the Hamiltonian matrix for the wheel graph.'''
+        H = self.construct_hamiltonian(epsilon)
+        eigenvalues, eigenvectors = np.linalg.eigh(H)
+        return eigenvalues, eigenvectors
+
+    def linear_absorption(self, gamma=0.05, n_omega=500):
+        energies, eigenvectors = self.compute_eigen()
+        mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
+        mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
+        osc = mu_x**2 + mu_y**2
+
+        e_min, e_max = energies.min(), energies.max()
+        pad = max(4.0 * gamma, 0.1 * (e_max - e_min) + 0.01)
+        omega_range = (e_min - pad, e_max + pad)
+        omega = np.linspace(omega_range[0], omega_range[1], n_omega)
+
+        spectrum = np.zeros(n_omega)
+        for E, f in zip(energies, osc):
+            spectrum += f * lorentzian(omega, E, gamma)
+
+        return omega, spectrum
+
+    def two_des_spectrum(self, gamma=0.05, n_omega=150, sequence = 'XXXX'):
+        energies, eigenvectors = self.compute_eigen()
+        mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
+        mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
+
+        e_min, e_max = energies.min(), energies.max()
+        pad = max(4.0 * gamma, 0.1 * (e_max - e_min) + 0.01)
+        omega_range = (e_min - pad, e_max + pad)
+
+        omega1 = np.linspace(omega_range[0], omega_range[1], n_omega)
+        omega3 = np.linspace(omega_range[0], omega_range[1], n_omega)
+
+        seq = sequence.upper()
+        if seq == 'XXXX':
+            amp_a = mu_x ** 2
+            amp_b = mu_x ** 2
+        elif seq == 'YYYY':
+            amp_a = mu_y ** 2
+            amp_b = mu_y ** 2
+        elif seq == 'XYXY':
+            amp_a = mu_x * mu_y
+            amp_b = mu_x * mu_y
+        elif seq == 'XXYY':
+            amp_a = mu_x ** 2
+            amp_b = mu_y ** 2
+        else:
+            raise ValueError(f"Unknown polarisation sequence: {sequence!r}")
+
+        # Precompute Lorentzians for all states on each axis
+        L1 = np.stack([lorentzian(omega1, E, gamma) for E in energies])  # (N, n_omega)
+        L3 = np.stack([lorentzian(omega3, E, gamma) for E in energies])  # (N, n_omega)
+
+        # Outer-product accumulation: faster than a double Python loop for typical N
+        spectrum = np.einsum('a,b,ai,bj->ij', amp_a, amp_b, L1, L3)
+        return omega1, omega3, spectrum
+
+    def two_des_anisotropy(self, gamma=0.05, n_omega=150):
+        omega1, omega3, S_xxxx = self.two_des_spectrum(gamma, n_omega, sequence='XXXX')
+        _, _, S_xyxy = self.two_des_spectrum(gamma, n_omega, sequence='XYXY')
+        with np.errstate(divide='ignore', invalid='ignore'):
+            anisotropy = (S_xxxx - S_xyxy) / (S_xxxx + 2 * S_xyxy)
+        return omega1, omega3, anisotropy
 
 class SquareWheelGrid:
     def __init__(self, rows, cols, separation=3, scale=1, angles=None):

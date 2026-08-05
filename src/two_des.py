@@ -425,7 +425,7 @@ def classify_region(theta_C, theta_P, K_s=1.0):
 # Spectra
 # ---------------------------------------------------------------------------
 
-def _lorentzian(omega, E, gamma):
+def lorentzian(omega, E, gamma):
     """Normalised Lorentzian centred at E with half-width gamma."""
     return (gamma / np.pi) / ((omega - E) ** 2 + gamma ** 2)
 
