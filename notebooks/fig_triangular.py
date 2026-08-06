@@ -614,14 +614,17 @@ def fig_2_5_phase_diagram_triangular(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_5_phase_diagram.png"), dpi=300)
 
+
+FIG4_SEP = 3.05
+
 def find_val(theta_c, ns_angle, ew_angle):
-    grid = TriangleWheelTiling(rows=3, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
+    grid = TriangleWheelTiling(rows=3, cols=3, separation=FIG4_SEP, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
     return grid.euler_characteristic_density()
 
 def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
-    theta_c_degrees = [0, 15, 30, 60]
+    theta_c_degrees = [0, 10, 20, 30]
     ns_angle_degrees = np.linspace(0, 360, 200)
     ew_angle_degrees = np.linspace(0, 360, 200)
     if preprocessed:
@@ -684,7 +687,7 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             grid = TriangleWheelTiling(
                 rows=3,
                 cols=3,
-                separation=3.0,
+                separation=FIG4_SEP,
                 scale=1.0,
                 angles=[theta_c] + [ns_angle, ew_angle] * 3,
             )
