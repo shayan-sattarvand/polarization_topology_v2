@@ -131,17 +131,17 @@ class Wheel:
         for (i, j, _) in self.all_edges:
             if (i, j) in self.active_edges:
                 color = '#1a9850'  # bright green
-                linewidth = 3
+                lw = 3
             else:
                 color = '#EEEEEE'  # light gray
-                linewidth = 1
+                lw = 1
             if (i, j)[0] == 0:  # spoke edge
                 start = self.center
                 end = self.spokes[(i, j)[1] - 1]
             else:  # rim edge
                 start = self.spokes[(i, j)[0] - 1]
                 end = self.spokes[(i, j)[1] - 1]
-            ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
+            ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=lw)
         ax.scatter(*self.center, color='blue', s=node_size, zorder=3)  # center node
         ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=node_size, zorder=3)  # spoke nodes
         if draw_dipoles:
@@ -354,7 +354,7 @@ class SquareWheelGrid:
         self.btwn_wheel_connections = btwn_wheel_connections
 
     
-    def render_grid(self, ax, draw_dipoles=False, node_size=100):
+    def render_grid(self, ax, draw_dipoles=False, node_size=100, linewidth=(1,2)):
         '''Render the grid of wheels on the given matplotlib axis `ax`.'''
         for row in self.wheels:
             for wheel in row:
@@ -366,11 +366,11 @@ class SquareWheelGrid:
             end = wheel2.spokes[spoke2 - 1]
             if ((row1, col1, spoke1), (row2, col2, spoke2)) in self.active_btwn_wheel_edges:
                 color = '#1a9850'  # bright green
-                linewidth = 2
+                lw = linewidth[1]
             else:
                 color = '#CCCCCC'  # light gray
-                linewidth = 1
-            ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=linewidth)
+                lw = linewidth[0]
+            ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=lw)
         ax.set_aspect('equal')
 
     def render_single_wheel(self, ax, row, col, draw_dipoles=False):

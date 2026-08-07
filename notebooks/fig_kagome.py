@@ -277,7 +277,7 @@ class KagomeWheelTiling:
 
         self.btwn_wheel_connections = btwn_wheel_connections
     
-    def render_grid(self, ax, draw_dipoles=False, node_size = 50):
+    def render_grid(self, ax, draw_dipoles=False, node_size = 50, linewidth=(3,5)):
         for i in self.wheels:
             for wheel in i:
                 wheel.render_wheel(ax, draw_dipoles=draw_dipoles, node_size = node_size)
@@ -285,9 +285,9 @@ class KagomeWheelTiling:
             x1, y1 = self.wheels[i1][j1].spokes[s1 - 1]
             x2, y2 = self.wheels[i2][j2].spokes[s2 - 1]
             if ((i1, j1, s1), (i2, j2, s2)) in self.active_btwn_wheel_edges:
-                ax.plot([x1, x2], [y1, y2], color='#1a9850', linewidth=5)
+                ax.plot([x1, x2], [y1, y2], color='#1a9850', linewidth=linewidth[1])
             else:
-                ax.plot([x1, x2], [y1, y2], color='#EEEEEE', linewidth=3)
+                ax.plot([x1, x2], [y1, y2], color='#EEEEEE', linewidth=linewidth[0])
     
     def beta0(self):
         '''Calculate the zeroth Betti number of the tiling based on active edges.'''
