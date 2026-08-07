@@ -726,8 +726,10 @@ def fig_2_5_phase_diagram_kagome(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p2_2_5_phase_diagram.png"), dpi=300)
 
+FIG4_SEP = 3.05
+
 def find_val(theta_c, ns_angle, ew_angle):
-    grid = KagomeWheelTiling(rows=8, cols=3, separation=3.0, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
+    grid = KagomeWheelTiling(rows=8, cols=3, separation=FIG4_SEP, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
     return grid.euler_characteristic_density()
 
 def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
@@ -796,7 +798,7 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             grid = KagomeWheelTiling(
                 rows=12,
                 cols=6,
-                separation=3.0,
+                separation=FIG4_SEP,
                 scale=1.0,
                 angles=[theta_c] + [ns_angle, ew_angle] * 3,
             )
