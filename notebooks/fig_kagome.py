@@ -581,7 +581,8 @@ class KagomeWheelTiling:
 
     def euler_characteristic_density(self):
         '''Calculate the Euler characteristic of the tiling based on active edges.'''
-        e = sum(1 for i in f'{self.binary_representation():b}' if i == '1')
+        e = sum(1 for i in f'{self.wheels[0][0].binary_representation():b}' if i == '1')
+        e += 2 * sum([self.horiz_active, self.diag1_active, self.diag2_active]) / 3
         v = 7
         t = self.num_triangles()
         return v - e + t
@@ -870,7 +871,7 @@ if __name__ == "__main__":
     # print("Generating Fig 2.5 phase diagram...")
     # fig_2_5_phase_diagram_kagome()
     print("Generating Fig 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # test_cc([0] + [276.1 * DEG, 37.9 * DEG] * 3)
 
 
