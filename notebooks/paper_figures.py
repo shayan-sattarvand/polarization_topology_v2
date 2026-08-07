@@ -27,7 +27,35 @@ import fig_square
 import fig_triangular
 
 
+    
 def fig_1():
+    '''Figure 1: 3 wheel graphs for n=3,4,6'''
+    fig = plt.figure(layout="constrained", figsize=(24, 16))
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 2])
+    gs00 = fig.add_subplot(gs[0, 0])
+    gs01 = fig.add_subplot(gs[0, 1])
+    gs02 = fig.add_subplot(gs[0, 2])
+    w3 = Wheel((0, 0), 1, 3, [60 * DEG] + [120 * DEG] * 3, 0)
+    w4 = Wheel((0, 0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
+    w6 = Wheel((0, 0), 1, 6, [30 * DEG] + [60 * DEG] * 6, 0)
+    w3.render_wheel(gs00, True)
+    w4.render_wheel(gs01, True)
+    w6.render_wheel(gs02, True)
+    gs00.set_title('Wheel graph with $n = 3$', fontsize=36, fontweight='bold')
+    gs01.set_title('Wheel graph with $n = 4$', fontsize=36, fontweight='bold')
+    gs02.set_title('Wheel graph with $n = 6$', fontsize=36, fontweight='bold')
+    for i in [gs00, gs01, gs02]:
+        i.set_aspect('equal')
+        i.set_box_aspect(1)
+        i.set_xlim(-1.275, 1.275)
+        i.set_ylim(-1.275, 1.275)
+        i.set_anchor('C')
+        i.axis('off')
+
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_1.png'), dpi=300)
+
+
+def fig_2():
     fig = plt.figure(layout="constrained", figsize=(24, 16))
 
     # Main 2x3 grid
@@ -65,20 +93,56 @@ def fig_1():
         i.set_ylim(-1.275, 1.275)
         i.set_anchor('C')
         i.axis('off')
-    fig_hexagonal.HexagonalWheelTiling(6, 3, angles=[60 * DEG] + [120 * DEG] * 3).render_grid(ax10, True)
+    hex = fig_hexagonal.HexagonalWheelTiling(6, 3, angles=[60 * DEG] + [120 * DEG] * 3)
+    hex.render_grid(ax10, True)
+    ax10.text(
+        0.5, 0.96,
+        f"$\\rho_\\chi = {hex.euler_characteristic_density():.2f}$, $\\rho_0 = {hex.cc_density():.2f}$, $\\rho_1 = {hex.beta1_density():.2f}$",
+        fontsize=18,
+        ha="center",
+        va="bottom",
+        transform=ax10.transAxes
+    )
     ax10.set_title('Hexagonal tiling', fontsize=36, fontweight='bold')
-    fig_square.SquareWheelGrid(5, 4, angles=[45 * DEG] + [90 * DEG] * 4).render_grid(ax11, True)
+    square = fig_square.SquareWheelGrid(5, 4, angles=[45 * DEG] + [90 * DEG] * 4)
+    square.render_grid(ax11, True)
+    ax11.text(
+            0.5, 0.96,
+            f"$\\rho_\\chi = {square.euler_characteristic_density():.2f}$, $\\rho_0 = {square.cc_density():.2f}$, $\\rho_1 = {square.beta1_density():.2f}$",
+            fontsize=18,
+            ha="center",
+            va="bottom",
+            transform=ax11.transAxes
+        )
     ax11.set_title('Square tiling', fontsize=36, fontweight='bold')
-    fig_triangular.TriangleWheelTiling(6, 3, angles=[30 * DEG] + [60 * DEG] * 6).render_grid(ax12_left, True)
+    triangle = fig_triangular.TriangleWheelTiling(6, 3, angles=[30 * DEG] + [60 * DEG] * 6)
+    triangle.render_grid(ax12_left, True)
+    ax12_left.text(
+            0.5, 0.96,
+            f"$\\rho_\\chi = {triangle.euler_characteristic_density():.2f}$, $\\rho_0 = {triangle.cc_density():.2f}$, $\\rho_1 = {triangle.beta1_density():.2f}$",
+            fontsize=18,
+            ha="center",
+            va="bottom",
+            transform=ax12_left.transAxes
+        )
     ax12_left.set_title('Triangular tiling', fontsize=36, fontweight='bold')
-    fig_kagome.KagomeWheelTiling(12, 3, angles=[30 * DEG] + [60 * DEG] * 6).render_grid(ax12_right, True)
+    kagome = fig_kagome.KagomeWheelTiling(12, 3, angles=[30 * DEG] + [60 * DEG] * 6)
+    kagome.render_grid(ax12_right, True)
+    ax12_right.text(
+            0.5, 0.96,
+            f"$\\rho_\\chi = {kagome.euler_characteristic_density():.2f}$, $\\rho_0 = {kagome.cc_density():.2f}$, $\\rho_1 = {kagome.beta1_density():.2f}$",
+            fontsize=18,
+            ha="center",
+            va="bottom",
+            transform=ax12_right.transAxes
+        )
     ax12_right.set_title('Kagome tiling', fontsize=36, fontweight='bold')
     for i in [ax10, ax11, ax12_left, ax12_right]:
         i.axis('off')
     
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_1.png'), dpi=300)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_2.png'), dpi=300)
 
-def fig_2():
+def fig_4():
     fig = plt.figure(layout = "constrained", figsize=(12, 9))
     gs = fig.add_gridspec(4, 4, height_ratios = [0.3, 1, 1, 1])
     subplots = [[]]
@@ -108,13 +172,62 @@ def fig_2():
         max_val = np.max(panel_values)
         c = ax.pcolormesh(NS_grid / DEG, EW_grid / DEG, panel_values, shading='auto', cmap='viridis', vmin=min_val, vmax=max_val)
         fig.colorbar(c, ax=ax, label='$\\rho_1$')
-    
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_2.png'), dpi=300)
-    
+        if loc == 0:
+            ax.plot(200, 250, 'ro', ms=4)
+            ax.annotate('A', xy=(210, 250), color='red')
+            ax.plot(70, 324, 'ro', ms=4)
+            ax.annotate('B', xy=(80, 324), color='red')
+            ax.plot(235, 34, 'ro', ms=4)
+            ax.annotate('C', xy=(245, 34), color='red')
+        if loc == 1:
+            ax.plot(270, 270, 'ro', ms=4)
+            ax.annotate('A', xy=(280, 270), color='red')
+            ax.plot(300, 125, 'ro', ms=4)
+            ax.annotate('B', xy=(310, 125), color='red')
+            ax.plot(214, 263, 'ro', ms=4)
+            ax.annotate('C', xy=(224, 263), color='red')
+        if loc == 2:
+            ax.plot(270, 270, 'ro', ms=4)
+            ax.annotate('A', xy=(280, 270), color='red')
+            ax.plot(300, 125, 'ro', ms=4)
+            ax.annotate('B', xy=(310, 125), color='red')
+            ax.plot(214, 263, 'ro', ms=4)
+            ax.annotate('C', xy=(224, 263), color='red')
 
+    for row, lattice in zip(range(1, 4), ['square ', 'triangular ', 'Kagome ']):
+        for col, phase in zip(range(1, 4), ['Fully connected ', 'Layered ', 'Sparsely-connected ']):
+            ax = subplots[row][col]
+            ns = 25
+            l = {}
+            if lattice == 'square ':
+                grid = fig_square.SquareWheelGrid(3, 3, angles=[0] + [[200 * DEG, 250 * DEG], [70 * DEG, 324 * DEG], [235 * DEG, 34 * DEG]][col - 1] * 2)
+            if lattice == 'triangular ':
+                grid = fig_triangular.TriangleWheelTiling(3, 3, separation=3.05, angles=[0] + [[270 * DEG, 270 * DEG], [300 * DEG, 125 * DEG], [214 * DEG, 263 * DEG]][col - 1] * 3)
+            if lattice == 'Kagome ':
+                grid = fig_kagome.KagomeWheelTiling(12, 3, separation=3.05, angles=[0] + [[270 * DEG, 270 * DEG], [300 * DEG, 125 * DEG], [214 * DEG, 263 * DEG]][col - 1] * 3)
+                ns = 12
+                l = {'linewidth': (1, 3)}
+            ax.set_title(phase + lattice + 'lattice ('+['', 'A', 'B', 'C'][col]+')', fontsize=9, fontweight='bold')
+            grid.render_grid(ax, True, node_size=ns, **l)
+            ax.text(
+                0.5, -0.2,
+                f"$\\rho_\\chi = {grid.euler_characteristic_density():.2f}$, $\\rho_0 = {grid.cc_density():.2f}$, $\\rho_1 = {grid.beta1_density():.2f}$",
+                            fontsize=8,
+                            ha="center",
+                            va="bottom",
+                            transform=ax.transAxes
+            )
+            
+
+    
+            
+
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_4.png'), dpi=300)
 
 if __name__ == '__main__':
-    fig_2()
+    # fig_1()
+    # fig_2()
+    fig_4()
 
 
 
