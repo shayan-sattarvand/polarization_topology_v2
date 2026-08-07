@@ -354,11 +354,11 @@ class SquareWheelGrid:
         self.btwn_wheel_connections = btwn_wheel_connections
 
     
-    def render_grid(self, ax, draw_dipoles=False):
+    def render_grid(self, ax, draw_dipoles=False, node_size=100):
         '''Render the grid of wheels on the given matplotlib axis `ax`.'''
         for row in self.wheels:
             for wheel in row:
-                wheel.render_wheel(ax, draw_dipoles=draw_dipoles)
+                wheel.render_wheel(ax, draw_dipoles=draw_dipoles, node_size=node_size)
         for ((row1, col1, spoke1), (row2, col2, spoke2), _) in self.btwn_wheel_connections:
             wheel1 = self.wheels[row1][col1]
             wheel2 = self.wheels[row2][col2]

@@ -208,10 +208,10 @@ class TriangleWheelTiling:
         self.btwn_wheel_connections = btwn_wheel_connections
 
     
-    def render_grid(self, ax, draw_dipoles=False):
+    def render_grid(self, ax, draw_dipoles=False, node_size = 100):
         for i in self.wheels:
             for wheel in i:
-                wheel.render_wheel(ax, draw_dipoles=draw_dipoles)
+                wheel.render_wheel(ax, draw_dipoles=draw_dipoles, node_size=node_size)
         for (i1, j1, s1), (i2, j2, s2), _ in self.btwn_wheel_connections:
             x1, y1 = self.wheels[i1][j1].spokes[s1 - 1]
             x2, y2 = self.wheels[i2][j2].spokes[s2 - 1]
@@ -738,7 +738,7 @@ if __name__ == "__main__":
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram_triangular(save=True)
     print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     print("All figures generated.")
 
 
