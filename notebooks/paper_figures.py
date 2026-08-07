@@ -208,6 +208,7 @@ def fig_4():
                 ns = 12
                 l = {'linewidth': (1, 3)}
             ax.set_title(phase + lattice + 'lattice ('+['', 'A', 'B', 'C'][col]+')', fontsize=9, fontweight='bold')
+            ax.axis('off')
             grid.render_grid(ax, True, node_size=ns, **l)
             ax.text(
                 0.5, -0.2,
@@ -218,16 +219,34 @@ def fig_4():
                             transform=ax.transAxes
             )
             
-
-    
-            
-
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_4.png'), dpi=300)
+
+def fig_5():
+    fig = plt.figure(layout = "constrained", figsize=(5, 6))
+    gs = fig.add_gridspec(2, 2, height_ratios = [0.1, 1])
+    ax_left = fig.add_subplot(gs[1,0])
+    ax_right = fig.add_subplot(gs[1,1])
+    ax_left.axis('off')
+    ax_right.axis('off')
+    no_defect = fig_square.SquareWheelGrid(5, 3, angles=[0]+[180*DEG,180*DEG]*2)
+    no_defect.render_grid(ax_left, linewidth=(1,5), node_size=50)
+    with_defect=fig_square.SquareWheelGrid(5, 3, angles=[0]+[180*DEG,180*DEG]*2, defects=[[(2,1), [0]+[278*DEG,212*DEG]*2]])
+    with_defect.render_grid(ax_right, linewidth=(1,5), node_size=50)
+    ax_left.set_title('Example square tiling', fontweight='bold')
+    ax_right.set_title('Same tiling with defect', fontweight='bold')
+    ax_left.text(0.5, 0.97, f'$\\beta_0 = {no_defect.beta0()}$, $\\beta_1 = {no_defect.beta1()}$', ha='center',va='bottom',transform=ax_left.transAxes)
+    ax_right.text(0.5, 0.97, f'$\\beta_0 = {with_defect.beta0()}$, $\\beta_1 = {with_defect.beta1()}$', ha='center',va='bottom',transform=ax_right.transAxes)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_5.png'), dpi=300)
+
+
+
+
 
 if __name__ == '__main__':
     # fig_1()
     # fig_2()
-    fig_4()
+    # fig_4()
+    fig_5()
 
 
 
