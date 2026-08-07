@@ -298,17 +298,21 @@ class Wheel:
         return omega1, omega3, anisotropy
 
 class SquareWheelGrid:
-    def __init__(self, rows, cols, separation=3, scale=1, angles=None):
+    def __init__(self, rows, cols, separation=3, scale=1, angles=None, defects = []):
         '''Class representing a grid of wheels with n=4 spokes. Each wheel is represented by an instance of the `Wheel` class.'''
         self.rows = rows
         self.cols = cols
         self.separation = separation
         self.wheels = []
+        defect_locations = [i[0] for i in defects]
         for i in range(rows):
             row = []
             for j in range(cols):
                 center = (j * separation, i * separation)
-                wheel = Wheel(center, scale, 4, angles=angles)
+                if (i, j) in defect_locations:
+                    wheel = defects[defect_locations.index((i,j))][1]
+                else:
+                    wheel = Wheel(center, scale, 4, angles=angles)
                 row.append(wheel)
             self.wheels.append(row)
         btwn_wheel_connections = []
