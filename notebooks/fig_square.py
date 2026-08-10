@@ -19,6 +19,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Circle, FancyArrowPatch, FancyBboxPatch
 from scipy.ndimage import label as ndlabel
+from scipy.linalg import expm
 
 from phase_diagram import (
     topological_leverage,
@@ -125,7 +126,6 @@ class Wheel:
         self.active_edges = active_edges
         self.all_edges = all_edges
         
-
     def render_wheel(self, ax, draw_dipoles=False, node_size=100):
         '''Render the wheel graph on the given matplotlib axis `ax`. Active edges are colored green, while inactive edges are colored gray.'''
         for (i, j, _) in self.all_edges:
@@ -239,7 +239,7 @@ class Wheel:
         eigenvalues, eigenvectors = np.linalg.eigh(H)
         return eigenvalues, eigenvectors
 
-    def linear_absorption(self, gamma=0.01, n_omega=500):
+    def linear_absorption(self, gamma=0.05, n_omega=500):
         energies, eigenvectors = self.compute_eigen()
         mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
         mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
@@ -255,6 +255,13 @@ class Wheel:
             spectrum += f * lorentzian(omega, E, gamma)
 
         return omega, spectrum
+
+    def plot_linear_absorption(self, ax, gamma=0.05, n_omega=500):
+        omega, spec = self.linear_absorption()
+        ax.plot(omega, spec, color='tab:blue', lw=1.6)
+        ax.fill_between(omega, 0.0, spec, color='tab:blue', alpha=0.25)
+        ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
+        ax.set_ylabel('Linear absorption', fontsize=9)
 
     def two_des_spectrum(self, gamma=0.05, n_omega=150, sequence = 'XXXX'):
         energies, eigenvectors = self.compute_eigen()
@@ -291,6 +298,105 @@ class Wheel:
         # Outer-product accumulation: faster than a double Python loop for typical N
         spectrum = np.einsum('a,b,ai,bj->ij', amp_a, amp_b, L1, L3)
         return omega1, omega3, spectrum
+
+    def two_des_spectrum_v2_1pt(self, t1, t2, t3, sequence='XXXX'):
+        ham = self.construct_hamiltonian()
+        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+        rho = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho[0, 0] = 1.0
+        td_op_x = [0, np.cos(self.center_angle)] + [np.cos(angle) for angle in self.spoke_angles]
+        td_op_y = [0, np.sin(self.center_angle)] + [np.sin(angle) for angle in self.spoke_angles]
+
+        td_op_x = np.array(td_op_x, dtype=complex)
+        td_op_x.reshape((1, -1))
+        td_op_x = np.vstack((td_op_x, np.zeros((self.n + 1, self.n + 2), dtype=complex)))
+        td_op_lowering_x = td_op_x
+        td_op_raising_x = td_op_x.T
+
+        td_op_y = np.array(td_op_y, dtype=complex)
+        td_op_y.reshape((1, -1))
+        td_op_y = np.vstack((td_op_y, np.zeros((self.n + 1, self.n + 2), dtype=complex)))
+        td_op_lowering_y = td_op_y
+        td_op_raising_y = td_op_y.T
+
+
+        # Pulse 1: raising on ket/left side
+        if sequence[0] == 'X': 
+            rho = td_op_raising_x @ rho
+        else:
+            rho = td_op_raising_y @ rho
+
+        # Evolve for t1
+        U = expm(-1j * t1 * ham)
+        rho = U @ rho @ U.conj().T
+
+        # Pulse 2: acts on bra/right side
+        if sequence[1] == 'X':
+            td_op = td_op_lowering_x
+        else:
+            td_op = td_op_lowering_y
+
+        # Evolve for t2
+        U = expm(-1j * t2 * ham)
+        rho = U @ rho @ U.conj().T
+
+        # Pulse 3: lowering on ket/left side
+        if sequence[2] == 'X':
+            td_op_lowering = td_op_lowering_x
+        else: 
+            td_op_lowering = td_op_lowering_y
+
+        # Evolve for t3
+        U = expm(-1j * t3 * ham)
+        rho = U @ rho @ U.conj().T
+
+        # The signal
+        return np.trace(td_op @ rho)
+
+    def two_des_spectrum_v2(self, t2, sequence='XXXX'):
+        t1 = np.arange(0, 50, 0.1)
+        t3 = np.arange(0, 50, 0.1)
+        T1, T3 = np.meshgrid(t1, t3)
+        S = np.zeros_like(T1, dtype=complex)
+        for i in range(T1.shape[0]):
+            for j in range(T1.shape[1]):
+                S[i, j] = self.two_des_spectrum_v2_1pt(T1[i, j], t2, T3[i, j], sequence=sequence)
+        return t1, t3, S
+
+    def two_des_fft_v2(self, t2, sequence='XXXX'):
+        t1, t3, S = self.two_des_spectrum_v2(t2, sequence=sequence)
+
+        dt1 = t1[1] - t1[0]
+        dt3 = t3[1] - t3[0]
+
+        # 2D Fourier transform
+        S_fft = np.fft.fftshift(
+            np.fft.fft2(S, axes=(0, 1)),
+            axes=(0, 1)
+        )
+
+        # np.fft.fftfreq gives ordinary frequency f (cycles / time).
+        # Multiply by 2*pi to obtain angular frequency omega.
+        omega1 = 2 * np.pi * np.fft.fftshift(
+            np.fft.fftfreq(len(t1), d=dt1)
+        )
+
+        omega3 = 2 * np.pi * np.fft.fftshift(
+            np.fft.fftfreq(len(t3), d=dt3)
+        )
+
+        return omega1, omega3, S_fft
+
+    def plot_2des_v2(self, ax, t2=1.0):
+        T1, T3, S = self.two_des_fft_v2(t2)
+        im = ax.imshow(np.abs(S), extent=(T1.min(), T1.max(), T3.min(), T3.max()), origin='lower', aspect='auto', cmap='viridis')
+        ax.set_xlabel('t1')
+        ax.set_ylabel('t3')
+        ax.set_title(f'2DES Spectrum at t2={t2}')
+        plt.colorbar(im, ax=ax, label='Signal Intensity')
+        
+
 
     def two_des_anisotropy(self, gamma=0.05, n_omega=150):
         omega1, omega3, S_xxxx = self.two_des_spectrum(gamma, n_omega, sequence='XXXX')
