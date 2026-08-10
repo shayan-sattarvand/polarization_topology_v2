@@ -137,10 +137,10 @@ class Wheel:
                 lw = 1
             if (i, j)[0] == 0:  # spoke edge
                 start = self.center
-                end = self.spokes[(i, j)[1] - 1]
+                end = self.spokes[j - 1]
             else:  # rim edge
-                start = self.spokes[(i, j)[0] - 1]
-                end = self.spokes[(i, j)[1] - 1]
+                start = self.spokes[i - 1]
+                end = self.spokes[j - 1]
             ax.plot([start[0], end[0]], [start[1], end[1]], color=color, linewidth=lw)
         ax.scatter(*self.center, color='blue', s=node_size, zorder=3)  # center node
         ax.scatter(self.spokes[:, 0], self.spokes[:, 1], color='#AAAAAA', s=node_size, zorder=3)  # spoke nodes
@@ -149,7 +149,7 @@ class Wheel:
                 angle = self.spoke_angles[i]
                 dx = 0.2 * np.cos(angle)
                 dy = 0.2 * np.sin(angle)
-                ax.arrow(self.spokes[i-1][0], self.spokes[i-1][1], dx, dy, head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
+                ax.arrow(self.spokes[i][0], self.spokes[i][1], dx, dy, head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
             ax.arrow(self.center[0], self.center[1], 0.2 * np.cos(self.center_angle), 0.2 * np.sin(self.center_angle), head_width=0.05, head_length=0.1, fc='red', ec='red', zorder=4)
         ax.set_aspect('equal')
     
