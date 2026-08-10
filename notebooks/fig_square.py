@@ -223,7 +223,9 @@ class Wheel:
         '''Construct the Hamiltonian matrix for the wheel graph.
         Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
         '''
-        matrix = np.diag([epsilon] * (self.n + 1), dtype='float64')  # set diagonal to epsilon
+        matrix = np.zeros((self.n + 1, self.n + 1), dtype='float64')  # initialize Hamiltonian matrix
+
+        np.fill_diagonal(matrix, [epsilon] * (self.n + 1))  # set diagonal to epsilon
 
         for u, v, J in self.all_edges:
             matrix[u, v] = J
