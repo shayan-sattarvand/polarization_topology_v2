@@ -223,7 +223,7 @@ class Wheel:
         '''Construct the Hamiltonian matrix for the wheel graph.
         Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
         '''
-        matrix = np.diag([epsilon] * (self.n + 1))  # set diagonal to epsilon
+        matrix = np.diag([epsilon] * (self.n + 1), dtype='float64')  # set diagonal to epsilon
 
         for u, v, J in self.all_edges:
             matrix[u, v] = J
@@ -237,7 +237,7 @@ class Wheel:
         eigenvalues, eigenvectors = np.linalg.eigh(H)
         return eigenvalues, eigenvectors
 
-    def linear_absorption(self, gamma=0.05, n_omega=500):
+    def linear_absorption(self, gamma=0.01, n_omega=500):
         energies, eigenvectors = self.compute_eigen()
         mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
         mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
