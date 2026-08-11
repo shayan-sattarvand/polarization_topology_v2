@@ -238,7 +238,47 @@ def fig_5():
     ax_right.text(0.5, 0.97, f'$\\beta_0 = {with_defect.beta0()}$, $\\beta_1 = {with_defect.beta1()}$', ha='center',va='bottom',transform=ax_right.transAxes)
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_5.png'), dpi=300)
 
-
+def fig_6():
+    fig = plt.figure(layout = "constrained", figsize=(12, 9))
+    gs = fig.add_gridspec(3,4)
+    fig_w1 = fig.add_subplot(gs[0,0])
+    fig_w2 = fig.add_subplot(gs[1,0])
+    fig_w3 = fig.add_subplot(gs[2,0])
+    w1_spec = fig.add_subplot(gs[0,1])
+    w2_spec = fig.add_subplot(gs[1,1])
+    w3_spec = fig.add_subplot(gs[2,1])
+    w1_2des = fig.add_subplot(gs[0,2])
+    w2_2des = fig.add_subplot(gs[1,2])
+    w3_2des = fig.add_subplot(gs[2,2])
+    w1_anis = fig.add_subplot(gs[0,3])
+    w2_anis = fig.add_subplot(gs[1,3])
+    w3_anis = fig.add_subplot(gs[2,3])
+    w1 = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
+    w2 = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [45 * DEG, 60 * DEG] * 2, 0)
+    w3 = fig_square.Wheel((0,0), 1, 4, [45 * DEG] * 5, 0)
+    w1.render_wheel(fig_w1, True)
+    w2.render_wheel(fig_w2, True)
+    w3.render_wheel(fig_w3, True)
+    for ax in [fig_w1, fig_w2, fig_w3]:
+        ax.set_aspect('equal')
+        ax.set_box_aspect(1)
+        ax.set_xlim(-1.275, 1.275)
+        ax.set_ylim(-1.275, 1.275)
+        ax.set_anchor('C')
+        ax.axis('off')
+    print('Plotting linear absorption...')
+    for ax, w in zip([w1_spec, w2_spec, w3_spec], [w1, w2, w3]):
+        print(f'Plotting linear absorption for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
+        w.plot_linear_absorption(ax, zoom_factor = 0.25)
+    print('Plotting 2DES spectra...')
+    for ax, w in zip([w1_2des, w2_2des, w3_2des], [w1, w2, w3]):
+        print(f'Plotting 2DES spectra for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
+        w.plot_2des(ax, zoom_factor = 0.25, log=True)
+    print('Plotting 2DES anisotropy...')
+    for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
+        print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
+        w.plot_2des_anisotopy(ax, zoom_factor = 0.25, log=False)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
 
 
@@ -246,7 +286,8 @@ if __name__ == '__main__':
     # fig_1()
     # fig_2()
     # fig_4()
-    fig_5()
+    # fig_5()
+    fig_6()
 
 
 
