@@ -424,7 +424,6 @@ class Wheel:
             extent=(omega1.min(), omega1.max(), omega3.min(), omega3.max()),
             origin='lower',
             aspect='auto',
-            cmap='coolwarm',
             vmin=-0.5,
             vmax=0.5
         )
