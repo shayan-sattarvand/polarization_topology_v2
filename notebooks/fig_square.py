@@ -239,7 +239,7 @@ class Wheel:
         eigenvalues, eigenvectors = np.linalg.eigh(H)
         return eigenvalues, eigenvectors
 
-    def linear_absorption(self, gamma=0.05, n_omega=500):
+    def linear_absorption_old(self, gamma=0.05, n_omega=500):
         energies, eigenvectors = self.compute_eigen()
         mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
         mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
@@ -256,50 +256,14 @@ class Wheel:
 
         return omega, spectrum
 
-    def plot_linear_absorption(self, ax, gamma=0.05, n_omega=500):
+    def plot_linear_absorption_old(self, ax, gamma=0.05, n_omega=500):
         omega, spec = self.linear_absorption()
         ax.plot(omega, spec, color='tab:blue', lw=1.6)
         ax.fill_between(omega, 0.0, spec, color='tab:blue', alpha=0.25)
         ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
         ax.set_ylabel('Linear absorption', fontsize=9)
 
-    def two_des_spectrum(self, gamma=0.05, n_omega=150, sequence = 'XXXX'):
-        energies, eigenvectors = self.compute_eigen()
-        mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
-        mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
-
-        e_min, e_max = energies.min(), energies.max()
-        pad = max(4.0 * gamma, 0.1 * (e_max - e_min) + 0.01)
-        omega_range = (e_min - pad, e_max + pad)
-
-        omega1 = np.linspace(omega_range[0], omega_range[1], n_omega)
-        omega3 = np.linspace(omega_range[0], omega_range[1], n_omega)
-
-        seq = sequence.upper()
-        if seq == 'XXXX':
-            amp_a = mu_x ** 2
-            amp_b = mu_x ** 2
-        elif seq == 'YYYY':
-            amp_a = mu_y ** 2
-            amp_b = mu_y ** 2
-        elif seq == 'XYXY':
-            amp_a = mu_x * mu_y
-            amp_b = mu_x * mu_y
-        elif seq == 'XXYY':
-            amp_a = mu_x ** 2
-            amp_b = mu_y ** 2
-        else:
-            raise ValueError(f"Unknown polarisation sequence: {sequence!r}")
-
-        # Precompute Lorentzians for all states on each axis
-        L1 = np.stack([lorentzian(omega1, E, gamma) for E in energies])  # (N, n_omega)
-        L3 = np.stack([lorentzian(omega3, E, gamma) for E in energies])  # (N, n_omega)
-
-        # Outer-product accumulation: faster than a double Python loop for typical N
-        spectrum = np.einsum('a,b,ai,bj->ij', amp_a, amp_b, L1, L3)
-        return omega1, omega3, spectrum
-
-    def two_des_spectrum_v2_1pt(self, t1, t2, t3, sequence='XXXX'):
+    def two_des_spectrum_1pt(self, t1, t2, t3, sequence='XXXX'):
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
         ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
@@ -354,21 +318,16 @@ class Wheel:
         # The signal
         return np.trace(td_op @ rho)
 
-    def two_des_spectrum_v2(self, t2, sequence='XXXX'):
-        t1 = np.arange(0, 50, 0.1)
-        t3 = np.arange(0, 50, 0.1)
+    def two_des_spectrum(self, t2, sequence='XXXX'):
+        dt1 = 0.1
+        dt3 = 0.1
+        t1 = np.arange(0, 50, dt1)
+        t3 = np.arange(0, 50, dt3)
         T1, T3 = np.meshgrid(t1, t3)
         S = np.zeros_like(T1, dtype=complex)
         for i in range(T1.shape[0]):
             for j in range(T1.shape[1]):
-                S[i, j] = self.two_des_spectrum_v2_1pt(T1[i, j], t2, T3[i, j], sequence=sequence)
-        return t1, t3, S
-
-    def two_des_fft_v2(self, t2, sequence='XXXX'):
-        t1, t3, S = self.two_des_spectrum_v2(t2, sequence=sequence)
-
-        dt1 = t1[1] - t1[0]
-        dt3 = t3[1] - t3[0]
+                S[i, j] = self.two_des_spectrum_1pt(T1[i, j], t2, T3[i, j], sequence=sequence)
 
         # 2D Fourier transform
         S_fft = np.fft.fftshift(
@@ -388,22 +347,145 @@ class Wheel:
 
         return omega1, omega3, S_fft
 
-    def plot_2des_v2(self, ax, t2=1.0):
-        T1, T3, S = self.two_des_fft_v2(t2)
-        im = ax.imshow(np.abs(S), extent=(T1.min(), T1.max(), T3.min(), T3.max()), origin='lower', aspect='auto', cmap='viridis')
-        ax.set_xlabel('t1')
-        ax.set_ylabel('t3')
+    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False):
+        omega1, omega3, S = self.two_des_spectrum(t2)
+
+        zoom_factor = float(zoom_factor)
+        if zoom_factor <= 0:
+            raise ValueError("zoom_factor must be positive")
+        zoom_factor = min(zoom_factor, 1.0)
+
+        n1 = len(omega1)
+        n3 = len(omega3)
+        keep_n1 = max(1, int(round(n1 * zoom_factor)))
+        keep_n3 = max(1, int(round(n3 * zoom_factor)))
+
+        start1 = (n1 - keep_n1) // 2
+        end1 = start1 + keep_n1
+        start3 = (n3 - keep_n3) // 2
+        end3 = start3 + keep_n3
+
+        omega1 = omega1[start1:end1]
+        omega3 = omega3[start3:end3]
+        S = S[start3:end3, start1:end1]
+
+        if log:
+            S = np.log(np.abs(S) + 1e-10)
+        else:
+            S = np.abs(S)
+
+        im = ax.imshow(
+            S,
+            extent=(omega1.min(), omega1.max(), omega3.min(), omega3.max()),
+            origin='lower',
+            aspect='auto',
+            cmap='viridis',
+        )
+        ax.set_xlabel(r'$\omega_1/K_s$')
+        ax.set_ylabel(r'$\omega_3/K_s$')
         ax.set_title(f'2DES Spectrum at t2={t2}')
         plt.colorbar(im, ax=ax, label='Signal Intensity')
-        
 
-
-    def two_des_anisotropy(self, gamma=0.05, n_omega=150):
-        omega1, omega3, S_xxxx = self.two_des_spectrum(gamma, n_omega, sequence='XXXX')
-        _, _, S_xyxy = self.two_des_spectrum(gamma, n_omega, sequence='XYXY')
+    def two_des_anisotropy(self, t2):
+        omega1, omega3, S_xxxx = self.two_des_spectrum(t2, sequence='XXXX')
+        _, _, S_xyxy = self.two_des_spectrum(t2, sequence='XYXY')
         with np.errstate(divide='ignore', invalid='ignore'):
             anisotropy = (S_xxxx - S_xyxy) / (S_xxxx + 2 * S_xyxy)
         return omega1, omega3, anisotropy
+
+    def plot_2des_anisotopy(self, ax, t2=1.0, zoom_factor=1.0, log=False):
+        omega1, omega3, anisotropy = self.two_des_anisotropy(t2)
+
+        zoom_factor = float(zoom_factor)
+        if zoom_factor <= 0:
+            raise ValueError("zoom_factor must be positive")
+        zoom_factor = min(zoom_factor, 1.0)
+
+        n1 = len(omega1)
+        n3 = len(omega3)
+        keep_n1 = max(1, int(round(n1 * zoom_factor)))
+        keep_n3 = max(1, int(round(n3 * zoom_factor)))
+
+        start1 = (n1 - keep_n1) // 2
+        end1 = start1 + keep_n1
+        start3 = (n3 - keep_n3) // 2
+        end3 = start3 + keep_n3
+
+        omega1 = omega1[start1:end1]
+        omega3 = omega3[start3:end3]
+        if log:
+            anisotropy = np.log(np.abs(anisotropy) + 1e-10)
+        else:
+            anisotropy = np.abs(anisotropy)
+        anisotropy = anisotropy[start3:end3, start1:end1]
+
+        im = ax.imshow(
+            anisotropy,
+            extent=(omega1.min(), omega1.max(), omega3.min(), omega3.max()),
+            origin='lower',
+            aspect='auto',
+            cmap='coolwarm',
+            vmin=-0.5,
+            vmax=0.5
+        )
+        ax.set_xlabel(r'$\omega_1/K_s$')
+        ax.set_ylabel(r'$\omega_3/K_s$')
+        ax.set_title(f'2DES Anisotropy at t2={t2}')
+        plt.colorbar(im, ax=ax, label='Anisotropy')
+
+    def linear_absorption_1pt(self, t, x=True):
+        ham = self.construct_hamiltonian()
+        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+        rho = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho[0, 0] = 1.0
+        if x:
+            td_op = [0, np.cos(self.center_angle)] + [np.cos(angle) for angle in self.spoke_angles]
+        else:
+            td_op = [0, np.sin(self.center_angle)] + [np.sin(angle) for angle in self.spoke_angles]
+        td_op = np.array(td_op, dtype=complex)
+        td_op.reshape((1, -1))
+        td_op = np.vstack((td_op, np.zeros((self.n + 1, self.n + 2), dtype=complex)))
+        td_op += td_op.T  # make it Hermitian
+        # Pulse
+        rho = -1j * (td_op @ rho - rho @ td_op)
+        # Time evolve
+        U = expm(-1j * ham * t)
+        rho = U @ rho @ U.conj().T
+
+        return np.trace(td_op @ rho)
+
+    def linear_absorption_spectrum(self, x=True):
+        dt = 0.1
+        t = np.arange(0, 30, dt)
+        S = np.zeros_like(t, dtype=complex)
+        for i in range(t.shape[0]):
+            S[i]+=self.linear_absorption_1pt(t[i], x)
+        S_fft = np.fft.fftshift(np.fft.fft(S))
+        omega = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(len(t), d=dt))
+        return omega, S_fft
+
+    def plot_linear_absorption(self, ax, x=True, zoom_factor=1.0):
+        omega, S = self.linear_absorption_spectrum(x)
+
+        zoom_factor = float(zoom_factor)
+        if zoom_factor <= 0:
+            raise ValueError("zoom_factor must be positive")
+        zoom_factor = min(zoom_factor, 1.0)
+
+        n = len(omega)
+        keep_n = max(1, int(round(n * zoom_factor)))
+        start = (n - keep_n) // 2
+        end = start + keep_n
+
+        omega = omega[start:end]
+        S = S[start:end]
+
+        ax.plot(omega, np.abs(S), color='tab:blue', lw=1.6)
+        ax.fill_between(omega, 0.0, np.abs(S), color='tab:blue', alpha=0.25)
+        ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
+        ax.set_ylabel('Linear absorption', fontsize=9)
+    
 
 class SquareWheelGrid:
     def __init__(self, rows, cols, separation=3, scale=1, angles=None, defects = []):
@@ -999,3 +1081,4 @@ if __name__ == "__main__":
     fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
+
