@@ -239,31 +239,8 @@ class Wheel:
         eigenvalues, eigenvectors = np.linalg.eigh(H)
         return eigenvalues, eigenvectors
 
-    def linear_absorption_old(self, gamma=0.05, n_omega=500):
-        energies, eigenvectors = self.compute_eigen()
-        mu_x = eigenvectors.T @ np.cos([self.center_angle] + self.spoke_angles)
-        mu_y = eigenvectors.T @ np.sin([self.center_angle] + self.spoke_angles)
-        osc = mu_x**2 + mu_y**2
-
-        e_min, e_max = energies.min(), energies.max()
-        pad = max(4.0 * gamma, 0.1 * (e_max - e_min) + 0.01)
-        omega_range = (e_min - pad, e_max + pad)
-        omega = np.linspace(omega_range[0], omega_range[1], n_omega)
-
-        spectrum = np.zeros(n_omega)
-        for E, f in zip(energies, osc):
-            spectrum += f * lorentzian(omega, E, gamma)
-
-        return omega, spectrum
-
-    def plot_linear_absorption_old(self, ax, gamma=0.05, n_omega=500):
-        omega, spec = self.linear_absorption()
-        ax.plot(omega, spec, color='tab:blue', lw=1.6)
-        ax.fill_between(omega, 0.0, spec, color='tab:blue', alpha=0.25)
-        ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
-        ax.set_ylabel('Linear absorption', fontsize=9)
-
     def two_des_spectrum_1pt(self, t1, t2, t3, sequence='XXXX'):
+        '''Compute the 2DES spectrum for a single point in time.'''
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
         ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
@@ -383,8 +360,11 @@ class Wheel:
         )
         ax.set_xlabel(r'$\omega_1/K_s$')
         ax.set_ylabel(r'$\omega_3/K_s$')
-        ax.set_title(f'2DES Spectrum at t2={t2}')
-        plt.colorbar(im, ax=ax, label='Signal Intensity')
+        ax.set_title(f'2DES Spectrum at $t_2={t2}$')
+        if not log:
+            plt.colorbar(im, ax=ax, label='Signal Intensity')
+        else: 
+            plt.colorbar(im, ax=ax, label='Log Signal Intensity')
 
     def two_des_anisotropy(self, t2):
         omega1, omega3, S_xxxx = self.two_des_spectrum(t2, sequence='XXXX')
@@ -393,7 +373,7 @@ class Wheel:
             anisotropy = (S_xxxx - S_xyxy) / (S_xxxx + 2 * S_xyxy)
         return omega1, omega3, anisotropy
 
-    def plot_2des_anisotopy(self, ax, t2=1.0, zoom_factor=1.0, log=False):
+    def plot_2des_anisotopy(self, ax, t2=1.0, zoom_factor=1.0):
         omega1, omega3, anisotropy = self.two_des_anisotropy(t2)
 
         zoom_factor = float(zoom_factor)
@@ -413,10 +393,8 @@ class Wheel:
 
         omega1 = omega1[start1:end1]
         omega3 = omega3[start3:end3]
-        if log:
-            anisotropy = np.log(np.abs(anisotropy) + 1e-10)
-        else:
-            anisotropy = np.abs(anisotropy)
+
+        anisotropy = np.abs(anisotropy)
         anisotropy = anisotropy[start3:end3, start1:end1]
 
         im = ax.imshow(
@@ -429,7 +407,7 @@ class Wheel:
         )
         ax.set_xlabel(r'$\omega_1/K_s$')
         ax.set_ylabel(r'$\omega_3/K_s$')
-        ax.set_title(f'2DES Anisotropy at t2={t2}')
+        ax.set_title(f'2DES Anisotropy at $t_2={t2}$')
         plt.colorbar(im, ax=ax, label='Anisotropy')
 
     def linear_absorption_1pt(self, t, x=True):
@@ -484,6 +462,7 @@ class Wheel:
         ax.fill_between(omega, 0.0, np.abs(S), color='tab:blue', alpha=0.25)
         ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
         ax.set_ylabel('Linear absorption', fontsize=9)
+        ax.set_title('Linear Absorption Spectrum', fontsize=9)
     
 
 class SquareWheelGrid:
