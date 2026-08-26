@@ -15,6 +15,7 @@ matplotlib.rcParams["font.family"] = "sans-serif"
 matplotlib.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans", "Liberation Sans", "sans-serif"]
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import quantarhei as qr
 from matplotlib.ticker import MaxNLocator
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Circle, FancyArrowPatch, FancyBboxPatch
@@ -219,7 +220,7 @@ class Wheel:
             binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
         return binary
 
-    def construct_hamiltonian(self, epsilon=1):
+    def construct_hamiltonian(self, epsilon=1.0):
         '''Construct the Hamiltonian matrix for the wheel graph.
         Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
         '''
@@ -233,7 +234,7 @@ class Wheel:
 
         return matrix
 
-    def compute_eigen(self, epsilon=1):
+    def compute_eigen(self, epsilon=1.0):
         '''Compute the eigenvalues and eigenvectors of the Hamiltonian matrix for the wheel graph.'''
         H = self.construct_hamiltonian(epsilon)
         eigenvalues, eigenvectors = np.linalg.eigh(H)
@@ -244,8 +245,8 @@ class Wheel:
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
         ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
-        rho = np.zeros((self.n + 2, self.n + 2), dtype=complex)
-        rho[0, 0] = 1.0
+        rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho_0[0, 0] = 1.0
         td_op_x = [0, np.cos(self.center_angle)] + [np.cos(angle) for angle in self.spoke_angles]
         td_op_y = [0, np.sin(self.center_angle)] + [np.sin(angle) for angle in self.spoke_angles]
 
@@ -261,39 +262,124 @@ class Wheel:
         td_op_lowering_y = td_op_y
         td_op_raising_y = td_op_y.T
 
+        # print('Raising x:', td_op_raising_x)
+        # print('Raising y:', td_op_raising_y)
+        # print('Lowering x:', td_op_lowering_x)
+        # print('Lowering y:', td_op_lowering_y)
 
-        # Pulse 1: raising on ket/left side
-        if sequence[0] == 'X': 
-            rho = td_op_raising_x @ rho
-        else:
-            rho = td_op_raising_y @ rho
+        
+        def operation(rho, left, raising, x):
+            if left:
+                if raising:
+                    return td_op_raising_x @ rho if x else td_op_raising_y @ rho
+                else: 
+                    return td_op_lowering_x @ rho if x else td_op_lowering_y @ rho
+            else:
+                if raising:
+                    return rho @ td_op_raising_x if x else rho @ td_op_raising_y
+                else: 
+                    return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
 
-        # Evolve for t1
-        U = expm(-1j * t1 * ham)
-        rho = U @ rho @ U.conj().T
+        U_1 = expm(-1j * t1 * ham)
+        U_2 = expm(-1j * t2 * ham)
+        U_3 = expm(-1j * t3 * ham)
+        pathways = []
+        # nonrephasing ESA
+        rho_N_ESA = rho_0.copy()
+        rho_N_ESA = operation(rho_N_ESA, True, True, sequence[0] == 'X')
+        rho_N_ESA = U_1 @ rho_N_ESA @ U_1.conj().T
+        rho_N_ESA = operation(rho_N_ESA, False, False, sequence[1] == 'X')
+        rho_N_ESA = U_2 @ rho_N_ESA @ U_2.conj().T
+        rho_N_ESA = operation(rho_N_ESA, True, True, sequence[2] == 'X')
+        rho_N_ESA = U_3 @ rho_N_ESA @ U_3.conj().T
+        pathways.append(rho_N_ESA)
+        # rephasing ESA
+        rho_R_ESA = rho_0.copy()
+        rho_R_ESA = operation(rho_R_ESA, False, False, sequence[0] == 'X')
+        rho_R_ESA = U_1 @ rho_R_ESA @ U_2.conj().T
+        rho_R_ESA = operation(rho_R_ESA, True, True, sequence[1] == 'X')
+        rho_R_ESA = U_2 @ rho_R_ESA @ U_2.conj().T
+        rho_R_ESA = operation(rho_R_ESA, False, False, sequence[2] == 'X')
+        rho_R_ESA = U_3 @ rho_R_ESA @ U_3.conj().T
+        pathways.append(rho_R_ESA)
+        # nonrephasing GSB
+        rho_N_GSB = rho_0.copy()
+        rho_N_GSB = operation(rho_N_GSB, True, True, sequence[0] == 'X')
+        rho_N_GSB = U_1 @ rho_N_GSB @ U_2.conj().T
+        rho_N_GSB = operation(rho_N_GSB, True, False, sequence[1] == 'X')
+        rho_N_GSB = U_2 @ rho_N_GSB @ U_2.conj().T
+        rho_N_GSB = operation(rho_N_GSB, True, True, sequence[2] == 'X')
+        rho_N_GSB = U_3 @ rho_N_GSB @ U_3.conj().T
+        pathways.append(rho_N_GSB)
+        # rephasing GSB
+        rho_R_GSB = rho_0.copy()
+        rho_R_GSB = operation(rho_R_GSB, False, False, sequence[0] == 'X')
+        rho_R_GSB = U_1 @ rho_R_GSB @ U_2.conj().T
+        rho_R_GSB = operation(rho_R_GSB, False, True, sequence[1] == 'X')
+        rho_R_GSB = U_2 @ rho_R_GSB @ U_2.conj().T
+        rho_R_GSB = operation(rho_R_GSB, False, False, sequence[2] == 'X')
+        rho_R_GSB = U_3 @ rho_R_GSB @ U_3.conj().T
+        pathways.append(rho_R_GSB)
+        # nonresphasing SE
+        rho_N_SE = rho_0.copy()
+        rho_N_SE = operation(rho_N_SE, True, True, sequence[0] == 'X')
+        rho_N_SE = U_1 @ rho_N_SE @ U_2.conj().T
+        rho_N_SE = operation(rho_N_SE, False, False, sequence[1] == 'X')
+        rho_N_SE = U_2 @ rho_N_SE @ U_2.conj().T
+        rho_N_SE = operation(rho_N_SE, True, False, sequence[2] == 'X')
+        rho_N_SE = U_3 @ rho_N_SE @ U_3.conj().T
+        pathways.append(rho_N_SE)
+        # rephasing SE
+        rho_R_SE = rho_0.copy()
+        rho_R_SE = operation(rho_R_SE, False, False, sequence[0] == 'X')
+        rho_R_SE = U_1 @ rho_R_SE @ U_2.conj().T
+        rho_R_SE = operation(rho_R_SE, True, True, sequence[1] == 'X')
+        rho_R_SE = U_2 @ rho_R_SE @ U_2.conj().T
+        rho_R_SE = operation(rho_R_SE, False, True, sequence[2] == 'X')
+        rho_R_SE = U_3 @ rho_R_SE @ U_3.conj().T
+        pathways.append(rho_R_SE)
 
-        # Pulse 2: acts on bra/right side
-        if sequence[1] == 'X':
-            td_op = td_op_lowering_x
-        else:
-            td_op = td_op_lowering_y
+        rho_total = sum(pathways)
 
-        # Evolve for t2
-        U = expm(-1j * t2 * ham)
-        rho = U @ rho @ U.conj().T
-
-        # Pulse 3: lowering on ket/left side
-        if sequence[2] == 'X':
-            td_op_lowering = td_op_lowering_x
+        if sequence[3] == 'X':
+            return np.trace(td_op_x @ rho_total)
         else: 
-            td_op_lowering = td_op_lowering_y
+            return np.trace(td_op_y @ rho_total)
 
-        # Evolve for t3
-        U = expm(-1j * t3 * ham)
-        rho = U @ rho @ U.conj().T
 
-        # The signal
-        return np.trace(td_op @ rho)
+        # rho_S_N_ESA = rho_0.copy()
+        # # Pulse 1: raising on ket/left side
+        # if sequence[0] == 'X': 
+        #     rho_S_N_ESA = td_op_raising_x @ rho_S_N_ESA
+        # else:
+        #     rho_S_N_ESA = td_op_raising_y @ rho_S_N_ESA
+
+        # # Evolve for t1
+        # U = expm(-1j * t1 * ham)
+        # rho_S_N_ESA = U @ rho_S_N_ESA @ U.conj().T
+
+        # # Pulse 2: acts on bra/right side
+        # if sequence[1] == 'X':
+        #     rho_S_N_ESA = td_op_lowering_x @ rho_S_N_ESA
+        # else:
+        #     td_op = td_op_lowering_y
+
+        # # Evolve for t2
+        # U = expm(-1j * t2 * ham)
+        # rho_S_N_ESA = U @ rho_S_N_ESA @ U.conj().T
+
+        # # Pulse 3: lowering on ket/left side
+        # if sequence[2] == 'X':
+        #     rho_S_N_ESA = td_op_lowering_x @ rho_S_N_ESA
+        # else: 
+        #     rho_S_N_ESA = td_op_lowering_y @ rho_S_N_ESA
+
+        # # Evolve for t3
+        # U = expm(-1j * t3 * ham)
+        # rho_S_N_ESA = U @ rho_S_N_ESA @ U.conj().T
+
+        # # The signal
+        # return np.trace(td_op @ rho_S_N_ESA)
 
     def two_des_spectrum(self, t2, sequence='XXXX'):
         dt1 = 0.1
@@ -463,7 +549,6 @@ class Wheel:
         ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
         ax.set_ylabel('Linear absorption', fontsize=9)
         ax.set_title('Linear Absorption Spectrum', fontsize=9)
-    
 
 class SquareWheelGrid:
     def __init__(self, rows, cols, separation=3, scale=1, angles=None, defects = []):

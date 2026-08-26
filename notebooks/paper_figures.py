@@ -31,7 +31,7 @@ import fig_triangular
 def fig_1():
     '''Figure 1: 3 wheel graphs for n=3,4,6'''
     fig = plt.figure(layout="constrained", figsize=(24, 16))
-    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 2])
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])
     gs00 = fig.add_subplot(gs[0, 0])
     gs01 = fig.add_subplot(gs[0, 1])
     gs02 = fig.add_subplot(gs[0, 2])
@@ -221,7 +221,7 @@ def fig_4():
             
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_4.png'), dpi=300)
 
-def fig_5():
+def fig_6():
     fig = plt.figure(layout = "constrained", figsize=(5, 6))
     gs = fig.add_gridspec(2, 2, height_ratios = [0.1, 1])
     ax_left = fig.add_subplot(gs[1,0])
@@ -238,7 +238,7 @@ def fig_5():
     ax_right.text(0.5, 0.97, f'$\\beta_0 = {with_defect.beta0()}$, $\\beta_1 = {with_defect.beta1()}$', ha='center',va='bottom',transform=ax_right.transAxes)
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_5.png'), dpi=300)
 
-def fig_6():
+def fig_7():
     fig = plt.figure(layout = "constrained", figsize=(12, 9))
     gs = fig.add_gridspec(3,4)
     fig_w1 = fig.add_subplot(gs[0,0])
@@ -277,7 +277,7 @@ def fig_6():
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotopy(ax, zoom_factor = 0.25, log=False)
+        w.plot_2des_anisotopy(ax, zoom_factor = 0.25)
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
 
