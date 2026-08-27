@@ -567,7 +567,7 @@ def fig_2_5_phase_diagram_hexagonal(save=True):
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_2_5_phase_diagram.png"), dpi=300)
 
 
-FIG4_SEP = 3.05
+FIG4_SEP = 3.02
 
 def find_val(theta_c, ns_angle, ew_angle):
     grid = HexagonalWheelTiling(rows=3, cols=3, separation=FIG4_SEP, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
