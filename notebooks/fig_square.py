@@ -875,22 +875,6 @@ class SquareWheelGrid:
             mat[n2_idx, -1] = 1
         return mat
 
-    def b2_matrix_bad(self):
-        # TODO: fix this whole thing cuz it's EDGES not NODES fahhh
-        mat = np.zeros((5 * self.rows * self.cols, self.num_triangles() * self.rows * self.cols))
-        if mat.shape[1] == 0:
-            return mat
-        triangle_count = 0
-        for row_i, row in enumerate(self.wheels):
-            for col_i, wheel in enumerate(row):
-                for i in range(4):
-                    if (0, i+1) in wheel.active_edges and (0, (i+1) % 4 + 1) in wheel.active_edges:
-                        mat[5 * (row_i * self.cols + col_i), triangle_count] = 1
-                        a, b = min(i+1, (i+1) % 4 + 1), max(i+1, (i+1) % 4 + 1)
-                        mat[5 * (row_i * self.cols + col_i) + a, triangle_count] = -1
-                        mat[5 * (row_i * self.cols + col_i) + b, triangle_count] = 1
-                        triangle_count += 1
-        return mat
 
     def b2_matrix(self):
         mat = np.zeros((len(self.active_btwn_wheel_edges) + self.rows * self.cols * len(self.wheels[0][0].active_edges), self.rows * self.cols * self.num_triangles()))
@@ -908,7 +892,7 @@ class SquareWheelGrid:
                         a = wheel.active_edges.index((0, i+1)) #amongst the edges, find the index of this one. 
                         b = wheel.active_edges.index((0, (i+1)%4 + 1))
                         c = wheel.active_edges.index((i+1, (i+1) % 4 + 1))
-                        a, b, c = [a, b, c].sort() # put them in order lol
+                        a, b, c = sorted([a, b, c]) # put them in order lol
                         mat_row = 5 * (row * self.cols + col)
                         mat_col = self.num_triangles() * (row * self.cols + col) + t
                         mat[mat_row + a, mat_col] = 1
@@ -1214,7 +1198,7 @@ if __name__ == "__main__":
     # fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
-    grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [0 * DEG, 90 * DEG] * 2)
+    grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [30 * DEG, 60 * DEG] * 2)
     ax = plt.subplot()
     grid.render_grid(ax)
     plt.show()
