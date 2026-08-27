@@ -15,12 +15,11 @@ matplotlib.rcParams["font.family"] = "sans-serif"
 matplotlib.rcParams["font.sans-serif"] = ["Arial", "DejaVu Sans", "Liberation Sans", "sans-serif"]
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-import quantarhei as qr
 from matplotlib.ticker import MaxNLocator
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Circle, FancyArrowPatch, FancyBboxPatch
 from scipy.ndimage import label as ndlabel
-from scipy.linalg import expm
+from scipy.linalg import expm, eig
 
 from phase_diagram import (
     topological_leverage,
@@ -857,6 +856,77 @@ class SquareWheelGrid:
         t = self.num_triangles()
         return v - e + t
 
+    def b1_matrix(self):
+        mat = np.zeros((0,0))
+        for row in self.wheels:
+            for wheel in row:
+                mat = np.vstack((mat, np.zeros((5, mat.shape[1]))))
+                mat = np.hstack((mat, np.zeros((mat.shape[0], edge_count:=len(wheel.active_edges)))))
+                for i, (u, v) in enumerate(wheel.active_edges):
+                    u_1, v_1 = min(u, v), max(u, v)
+                    mat[u_1 - 5, i - edge_count] = -1
+                    mat[v_1 - 5, i - edge_count] = 1
+        for i, ((r1, c1, n1), (r2, c2, n2)) in enumerate(self.active_btwn_wheel_edges):
+            mat = np.hstack((mat, np.zeros((mat.shape[0], 1))))
+            n1_idx = 5 * (r1 * self.cols + c1) + n1
+            n2_idx = 5 * (r2 * self.cols + c2) + n2
+            n1_idx, n2_idx = min(n1_idx, n2_idx), max(n1_idx, n2_idx)
+            mat[n1_idx, -1] = -1
+            mat[n2_idx, -1] = 1
+        return mat
+
+    def b2_matrix_bad(self):
+        # TODO: fix this whole thing cuz it's EDGES not NODES fahhh
+        mat = np.zeros((5 * self.rows * self.cols, self.num_triangles() * self.rows * self.cols))
+        if mat.shape[1] == 0:
+            return mat
+        triangle_count = 0
+        for row_i, row in enumerate(self.wheels):
+            for col_i, wheel in enumerate(row):
+                for i in range(4):
+                    if (0, i+1) in wheel.active_edges and (0, (i+1) % 4 + 1) in wheel.active_edges:
+                        mat[5 * (row_i * self.cols + col_i), triangle_count] = 1
+                        a, b = min(i+1, (i+1) % 4 + 1), max(i+1, (i+1) % 4 + 1)
+                        mat[5 * (row_i * self.cols + col_i) + a, triangle_count] = -1
+                        mat[5 * (row_i * self.cols + col_i) + b, triangle_count] = 1
+                        triangle_count += 1
+        return mat
+
+    def b2_matrix(self):
+        mat = np.zeros((len(self.active_btwn_wheel_edges) + self.rows * self.cols * len(self.wheels[0][0].active_edges), self.rows * self.cols * self.num_triangles()))
+        if self.num_triangles() == 0:
+            return mat
+        #note: edges count up like: wheel1 edges, wheel2, edges, etc... interwheel edges
+        #note: wheel edges are counted as center-spoke then rim. so CE CN CW CS NE NW SW SE
+        for row in range(self.rows):
+            for col in range(self.cols):
+                wheel = self.wheels[row][col]
+                t = 0
+                for i in range(4):
+                    if (i+1, (i+1) % 4 + 1) in wheel.active_edges and (0, i+1) in wheel.active_edges and (0, (i+1)%4 + 1) in wheel.active_edges:
+                        #1st and 2nd edge are center-spoke, 3rd edge is always the rim one. 
+                        a = wheel.active_edges.index((0, i+1)) #amongst the edges, find the index of this one. 
+                        b = wheel.active_edges.index((0, (i+1)%4 + 1))
+                        c = wheel.active_edges.index((i+1, (i+1) % 4 + 1))
+                        a, b, c = [a, b, c].sort() # put them in order lol
+                        mat_row = 5 * (row * self.cols + col)
+                        mat_col = self.num_triangles() * (row * self.cols + col) + t
+                        mat[mat_row + a, mat_col] = 1
+                        mat[mat_row + b, mat_col] = -1
+                        mat[mat_row + c, mat_col] = 1
+                        t += 1 # so we write in the next spot next time
+        return mat
+
+    def l1_laplacian(self):
+        b1 = self.b1_matrix()
+        b2 = self.b2_matrix()
+        return b1.T @ b1 + b2 @ b2.T
+        
+    def l1_eig(self):
+        #returns l1 eigenvalues and eigenvectors
+        return eig(self.l1_laplacian())
+
+
 def fig1(save=True):
     '''Generate a figure showing three wheels, all with n=4 spokes and spoke angles 45 degrees, but with different center angles.'''
     fig, axes = plt.subplots(1, 3, figsize=(11, 4.5)) # make subplots
@@ -1140,8 +1210,15 @@ if __name__ == "__main__":
     # fig_2_phase_diagram(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
-    print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    # print("Generating figure 4 phase diagram...")
+    # fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
+    grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [0 * DEG, 90 * DEG] * 2)
+    ax = plt.subplot()
+    grid.render_grid(ax)
+    plt.show()
+    print(grid.b1_matrix())
+    print(grid.b2_matrix())
+    print(grid.l1_laplacian())
 
