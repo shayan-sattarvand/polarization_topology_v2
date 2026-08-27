@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import math
 import numpy as np
 from multiprocessing import Pool, cpu_count
 
@@ -877,7 +878,8 @@ class SquareWheelGrid:
 
 
     def b2_matrix(self):
-        mat = np.zeros((len(self.active_btwn_wheel_edges) + self.rows * self.cols * len(self.wheels[0][0].active_edges), self.rows * self.cols * self.num_triangles()))
+        mat = np.zeros((len(self.active_btwn_wheel_edges) + sum([sum([len(wheel.active_edges) for wheel in row]) for row in self.wheels]), self.rows * self.cols * self.num_triangles()))
+        
         if self.num_triangles() == 0:
             return mat
         #note: edges count up like: wheel1 edges, wheel2, edges, etc... interwheel edges
@@ -909,6 +911,18 @@ class SquareWheelGrid:
     def l1_eig(self):
         #returns l1 eigenvalues and eigenvectors
         return eig(self.l1_laplacian())
+
+    def l1_eig_dist(self):
+        vals, _ = self.l1_eig()
+        values, occurences = [], []
+        for val in vals:
+            if True in (a:=[math.isclose(val, i) for i in values]):
+                occurences[a.index(True)] += 1
+            else:
+                occurences.append(1)
+                values.append(val)
+
+        return values, occurences
 
 
 def fig1(save=True):
@@ -1205,4 +1219,5 @@ if __name__ == "__main__":
     print(grid.b1_matrix())
     print(grid.b2_matrix())
     print(grid.l1_laplacian())
+    print(grid.l1_eig())
 
