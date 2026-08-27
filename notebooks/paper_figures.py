@@ -222,21 +222,36 @@ def fig_4():
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_4.png'), dpi=300)
 
 def fig_6():
-    fig = plt.figure(layout = "constrained", figsize=(5, 6))
-    gs = fig.add_gridspec(2, 2, height_ratios = [0.1, 1])
-    ax_left = fig.add_subplot(gs[1,0])
-    ax_right = fig.add_subplot(gs[1,1])
+    fig = plt.figure(layout = "constrained", figsize=(9, 6))
+    gs = fig.add_gridspec(2, 2, height_ratios = [1, 1])
+    ax_left = fig.add_subplot(gs[0,0])
+    ax_right = fig.add_subplot(gs[0,1])
     ax_left.axis('off')
     ax_right.axis('off')
-    no_defect = fig_square.SquareWheelGrid(5, 3, angles=[0]+[180*DEG,180*DEG]*2)
+    no_defect = fig_square.SquareWheelGrid(3, 5, angles=[0]+[180*DEG,180*DEG]*2)
     no_defect.render_grid(ax_left, linewidth=(1,5), node_size=50)
-    with_defect=fig_square.SquareWheelGrid(5, 3, angles=[0]+[180*DEG,180*DEG]*2, defects=[[(2,1), [0]+[278*DEG,212*DEG]*2]])
+    with_defect=fig_square.SquareWheelGrid(3, 5, angles=[0]+[180*DEG,180*DEG]*2, defects=[[(1,2), [0]+[278*DEG,212*DEG]*2]])
     with_defect.render_grid(ax_right, linewidth=(1,5), node_size=50)
     ax_left.set_title('Example square tiling', fontweight='bold')
     ax_right.set_title('Same tiling with defect', fontweight='bold')
     ax_left.text(0.5, 0.97, f'$\\beta_0 = {no_defect.beta0()}$, $\\beta_1 = {no_defect.beta1()}$', ha='center',va='bottom',transform=ax_left.transAxes)
     ax_right.text(0.5, 0.97, f'$\\beta_0 = {with_defect.beta0()}$, $\\beta_1 = {with_defect.beta1()}$', ha='center',va='bottom',transform=ax_right.transAxes)
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_5.png'), dpi=300)
+    #show eigenvalue distribution of L1 for them
+    no_defect_dist = no_defect.l1_eig_dist()
+    with_defect_dist = with_defect.l1_eig_dist()
+    eig_fig = fig.add_subplot(gs[1,0:2])
+    eig_fig.set_title('Distribution of $L_1$ Laplacian Eigenvalues')
+    eig_fig.grid(True)
+    for val, occurence in zip(*no_defect_dist):
+        eig_fig.plot([val, val], [0, occurence], color='#6666FF', alpha=0.5)
+    eig_fig.scatter(no_defect_dist[0], no_defect_dist[1], color='#6666FF', label = 'No Defect Eigenvalues')
+    for val, occurence in zip(*with_defect_dist):
+        eig_fig.plot([val, val], [0, occurence], color='#FF6666', alpha=0.5)
+    eig_fig.scatter(with_defect_dist[0], with_defect_dist[1], color='#FF6666', alpha=0.8, label = 'With Defect Eigenvalues')
+    eig_fig.legend()
+    eig_fig.set_xlabel("Eigenvalue")
+    eig_fig.set_ylabel("Multiplicity")
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
 def fig_7():
     fig = plt.figure(layout = "constrained", figsize=(12, 9))
@@ -278,7 +293,7 @@ def fig_7():
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
         w.plot_2des_anisotopy(ax, zoom_factor = 0.25)
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_7.png'), dpi=300)
 
 
 
