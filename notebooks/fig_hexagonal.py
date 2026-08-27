@@ -1,7 +1,7 @@
 import sys
 import os
 import numpy as np
-
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.dirname(__file__))
@@ -16,6 +16,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Circle, FancyArrowPatch, FancyBboxPatch
 from scipy.ndimage import label as ndlabel
+from multiprocessing import Pool
 
 from phase_diagram import (
     topological_leverage,
@@ -47,10 +48,34 @@ from cc_density import DisjointSetUnion, print_bin
 
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'figures', 'hexagonal')
 os.makedirs(FIGURES_DIR, exist_ok=True)
+FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
+os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
 K_s = 1.0
 NEW_J_CONDITION = True
 J_SQUARED_THRESHOLD = 1
+
+def _fig4_cache_paths():
+    metadata_path = os.path.join(FIG4_CACHE_DIR, 'metadata.json')
+    panel_paths = [os.path.join(FIG4_CACHE_DIR, f'panel_{index}.csv') for index in range(4)]
+    return metadata_path, panel_paths
+
+
+def _save_fig4_cache(metadata, panel_values):
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
+        json.dump(metadata, metadata_file, indent=2)
+    for panel_path, panel_values_for_axis in zip(panel_paths, panel_values):
+        np.savetxt(panel_path, panel_values_for_axis, fmt='%d', delimiter=',')
+
+
+def _load_fig4_cache():
+    metadata_path, panel_paths = _fig4_cache_paths()
+    with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
+        metadata = json.load(metadata_file)
+    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=int) for panel_path in panel_paths]
+    return metadata, panel_values
+
 
 class HexagonalWheelTiling:
     def __init__(self, rows, cols, separation=3.0, scale=1.0, angles=None):
@@ -59,16 +84,28 @@ class HexagonalWheelTiling:
         self.separation = separation
         self.scale = scale
         self.wheels = []
+        if len(angles) == 7:
+            angles_1 = [angles[0], angles[2], angles[4], angles[6]]
+            angles_2 = [angles[0], angles[1], angles[3], angles[5]]
         for i in range(rows):
             row = []
             for j in range(cols):
-                wheel = Wheel(
-                    center=(
-                        separation * (1.5 * j + ((i + j) % 2) * 0.5),
-                        separation * (np.sqrt(3) * i / 2),
-                        ),
-                    scale=self.scale, n=3, angles=angles, offset = ((i+j+1)%2)*np.pi/3
-                )
+                if len(angles) == 7:
+                    wheel = Wheel(
+                        center=(
+                            separation * (1.5 * j + ((i + j) % 2) * 0.5),
+                            separation * (np.sqrt(3) * i / 2),
+                            ),
+                        scale=self.scale, n=3, angles=[angles_1, angles_2][(i+j)%2], offset = ((i+j+1)%2)*np.pi/3
+                    )
+                else:
+                    wheel = Wheel(
+                        center=(
+                            separation * (1.5 * j + ((i + j) % 2) * 0.5),
+                            separation * (np.sqrt(3) * i / 2),
+                            ),
+                        scale=self.scale, n=3, angles=angles, offset = ((i+j+1)%2)*np.pi/3
+                    )
                 row.append(wheel)
             self.wheels.append(row)
         # Create edges between adjacent wheels
@@ -416,9 +453,6 @@ def fig1(save=True):
     if save:
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_1_concept.png"), dpi=300)
 
-
-
-
 def fig2_mechanism_hexagonal(save=True):
     '''Generate a figure showing 3 different 5x5 hexagonal grids with n=6 spokes and spoke angles 60 degrees, but with different center angles.'''
     fig, axes = plt.subplots(2, 3, figsize=(30, 20))
@@ -533,6 +567,110 @@ def fig_2_5_phase_diagram_hexagonal(save=True):
         plt.savefig(os.path.join(FIGURES_DIR, "fig_p3_2_5_phase_diagram.png"), dpi=300)
 
 
+FIG4_SEP = 3.05
+
+def find_val(theta_c, ns_angle, ew_angle):
+    grid = HexagonalWheelTiling(rows=3, cols=3, separation=FIG4_SEP, scale=1.0, angles=[theta_c] + [ns_angle, ew_angle] * 3)
+    return grid.euler_characteristic_density()
+
+def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=False):
+    '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
+    fig, axes = plt.subplots(2, 2, figsize=(25, 10))
+    theta_c_degrees = [0, 10, 20, 30]
+    ns_angle_degrees = np.linspace(0, 360, 200)
+    ew_angle_degrees = np.linspace(0, 360, 200)
+    if preprocessed:
+        metadata, panel_values = _load_fig4_cache()
+        theta_c_degrees = metadata['theta_c_degrees']
+        ns_angle_degrees = np.array(metadata['ns_angle_degrees'])
+        ew_angle_degrees = np.array(metadata['ew_angle_degrees'])
+    else:
+        panel_values = []
+        for theta_c_degree in theta_c_degrees:
+            theta_c = theta_c_degree * DEG
+            NS_angles = ns_angle_degrees * DEG
+            EW_angles = ew_angle_degrees * DEG
+            NS_grid, EW_grid = np.meshgrid(NS_angles, EW_angles)
+
+            # beta1_values = np.zeros_like(NS_grid, dtype=int)
+            # for i in range(NS_grid.shape[0]):
+            #     for j in range(NS_grid.shape[1]):
+            #         beta1_values[i, j] = find_val(theta_c, NS_grid[i, j], EW_grid[i, j])
+            with Pool() as pool:
+                args = [(theta_c, ns_angle, ew_angle) for ns_angle in NS_angles for ew_angle in EW_angles]
+                beta1_values_flat = pool.starmap(find_val, args)
+            beta1_values = np.transpose(np.array(beta1_values_flat).reshape(NS_grid.shape))
+
+            panel_values.append(beta1_values)
+        _save_fig4_cache(
+            {
+                'theta_c_degrees': theta_c_degrees,
+                'ns_angle_degrees': ns_angle_degrees.tolist(),
+                'ew_angle_degrees': ew_angle_degrees.tolist(),
+            },
+            panel_values,
+        )
+
+    theta_c_values = [degree * DEG for degree in theta_c_degrees]
+    ax_to_theta = {}
+    NS_grid, EW_grid = np.meshgrid(ns_angle_degrees * DEG, ew_angle_degrees * DEG)
+    for ax, angle, beta1_values in zip(axes.flatten(), theta_c_values, panel_values):
+        ax.set_xlabel("NS spoke angle (degrees)")
+        ax.set_ylabel("EW spoke angle (degrees)")
+        ax.set_title("Phase diagram of $\\beta_1$ for a 3x3 grid with $\\theta_C = {}$°".format(angle / DEG))
+        ax_to_theta[ax] = angle
+        max_beta1 = np.max(beta1_values)
+        min_beta1 = np.min(beta1_values)
+        c = ax.pcolormesh(NS_grid / DEG, EW_grid / DEG, beta1_values, shading='auto', cmap='viridis', vmin=min_beta1, vmax=max_beta1)
+        fig.colorbar(c, ax=ax, label='$\\beta_1$')
+    backend_is_interactive = matplotlib.get_backend().lower() != "agg"
+
+    if interactive and backend_is_interactive:
+        def on_click(event):
+            if event.inaxes not in ax_to_theta:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+            if event.button != 1:
+                return
+            theta_c = ax_to_theta[event.inaxes]
+            ns_angle = event.xdata * DEG
+            ew_angle = event.ydata * DEG
+            grid = HexagonalWheelTiling(
+                rows=3,
+                cols=3,
+                separation=FIG4_SEP,
+                scale=1.0,
+                angles=[theta_c] + [ns_angle, ew_angle] * 3,
+            )
+            fig_grid, ax_grid = plt.subplots(figsize=(8, 8))
+            grid.render_grid(ax_grid, draw_dipoles=True)
+            ax_grid.set_aspect('equal')
+            ax_grid.axis('off')
+            ax_grid.set_title(
+                "Grid view: $\\theta_C = {:.1f}$°, NS = {:.1f}$^\\circ$, EW = {:.1f}$^\\circ$\n$\\beta_0 = {}$, $\\beta_1 = {}$, $\\rho_0 = {}$, $\\rho_1 = {}$".format(
+                    theta_c / DEG,
+                    event.xdata,
+                    event.ydata,
+                    grid.beta0(),
+                    grid.beta1(),
+                    grid.cc_density(),
+                    grid.beta1_density(),
+                )
+            )
+            fig_grid.tight_layout()
+            fig_grid.show()
+
+        fig.canvas.mpl_connect("button_press_event", on_click)
+
+    if save: # save the figure to the figures directory if specified
+        plt.savefig(os.path.join(FIGURES_DIR, "fig_p1_4_phase_diagram.png"), dpi=300)
+    if show and backend_is_interactive:
+        plt.show()
+    elif show and not backend_is_interactive:
+        print("Interactive display skipped because matplotlib backend is non-interactive:", matplotlib.get_backend())
+
+
 if __name__ == "__main__":
     # print("Generating figure 1...")
     # fig1(save=True)
@@ -542,13 +680,16 @@ if __name__ == "__main__":
     # fig_2_phase_diagram_hexagonal(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram_hexagonal(save=True)
-    test_grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 180] + [60 * DEG] * 2 + [120 * DEG])
-    fig, ax = plt.subplots(figsize=(6, 6))
-    test_grid.render_grid(ax, draw_dipoles=True)
-    ax.set_aspect('equal')
-    ax.axis('off')
-    plt.savefig(os.path.join(FIGURES_DIR, "test_grid.png"), dpi=300)
-    print(test_grid.cc_density())
+    # test_grid = HexagonalWheelTiling(rows=5, cols=5, separation=3.0, scale=1.0, angles=[DEG * 180] + [60 * DEG] * 2 + [120 * DEG])
+    # fig, ax = plt.subplots(figsize=(6, 6))
+    # test_grid.render_grid(ax, draw_dipoles=True)
+    # ax.set_aspect('equal')
+    # ax.axis('off')
+    # plt.savefig(os.path.join(FIGURES_DIR, "test_grid.png"), dpi=300)
+    # print(test_grid.cc_density())
+    print("Generating figure 4 phase diagram...")
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    print("All figures generated.")
 
 
 
