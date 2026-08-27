@@ -66,14 +66,14 @@ def _save_fig4_cache(metadata, panel_values):
     with open(metadata_path, 'w', encoding='utf-8') as metadata_file:
         json.dump(metadata, metadata_file, indent=2)
     for panel_path, panel_values_for_axis in zip(panel_paths, panel_values):
-        np.savetxt(panel_path, panel_values_for_axis, fmt='%d', delimiter=',')
+        np.savetxt(panel_path, panel_values_for_axis, delimiter=',')
 
 
 def _load_fig4_cache():
     metadata_path, panel_paths = _fig4_cache_paths()
     with open(metadata_path, 'r', encoding='utf-8') as metadata_file:
         metadata = json.load(metadata_file)
-    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=int) for panel_path in panel_paths]
+    panel_values = [np.loadtxt(panel_path, delimiter=',', dtype=float) for panel_path in panel_paths]
     return metadata, panel_values
 
 
@@ -599,7 +599,7 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
             with Pool() as pool:
                 args = [(theta_c, ns_angle, ew_angle) for ns_angle in NS_angles for ew_angle in EW_angles]
                 beta1_values_flat = pool.starmap(find_val, args)
-            beta1_values = np.transpose(np.array(beta1_values_flat).reshape(NS_grid.shape))
+            beta1_values = np.transpose(np.array(beta1_values_flat, dtype=float).reshape(NS_grid.shape))
 
             panel_values.append(beta1_values)
         _save_fig4_cache(
