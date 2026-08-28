@@ -143,17 +143,17 @@ def fig_2():
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_2.png'), dpi=300)
 
 def fig_4():
-    fig = plt.figure(layout = "constrained", figsize=(12, 9))
-    gs = fig.add_gridspec(4, 4, height_ratios = [0.3, 1, 1, 1])
+    fig = plt.figure(layout = "constrained", figsize=(12, 12))
+    gs = fig.add_gridspec(4, 4, height_ratios = [1, 1, 1, 1])
     subplots = [[]]
-    for i in range(3):
+    for i in range(4):
         row = []
         for j in range(4):
-            row.append(fig.add_subplot(gs[i + 1, j]))
+            row.append(fig.add_subplot(gs[i, j]))
         subplots.append(row)
 
     # load in the phase diagrams from the csv's to save time
-    for loc, path in zip(list(range(3)), ['square', 'triangular', 'kagome']):
+    for loc, path in zip(list(range(4)), ['square', 'triangular', 'kagome', 'hexagonal']):
 
         metadata_path = os.path.join(os.path.dirname(__file__), '..', 'figures', path, 'fig4_cache', 'metadata.json')
         panel_path = os.path.join(os.path.dirname(__file__), '..', 'figures', path, 'fig4_cache', 'panel_0.csv')
@@ -193,9 +193,18 @@ def fig_4():
             ax.annotate('B', xy=(310, 125), color='red')
             ax.plot(214, 263, 'ro', ms=4)
             ax.annotate('C', xy=(224, 263), color='red')
+        if loc == 3:
+            ax.plot(109.2, 69.2, 'ro', ms=4)
+            ax.annotate('A', xy=(119.2, 69.2), color='red')
+            ax.plot(244.5, 130.7, 'ro', ms=4)
+            ax.annotate('B', xy=(254.5, 130.7), color='red')
+            ax.plot(131, 176.5, 'ro', ms=4)
+            ax.annotate('C', xy=(141, 176.5), color='red')
+            
 
-    for row, lattice in zip(range(1, 4), ['square ', 'triangular ', 'Kagome ']):
-        for col, phase in zip(range(1, 4), ['Fully connected ', 'Layered ', 'Sparsely-connected ']):
+
+    for row, lattice in zip(range(1, 5), ['square ', 'triangular ', 'Kagome ', 'hexagonal ']):
+        for col, phase in zip(range(1, 5), ['Fully connected ', 'Layered ', 'Sparsely-connected ']):
             ax = subplots[row][col]
             ns = 25
             l = {}
@@ -207,6 +216,8 @@ def fig_4():
                 grid = fig_kagome.KagomeWheelTiling(12, 3, separation=3.05, angles=[0] + [[270 * DEG, 270 * DEG], [300 * DEG, 125 * DEG], [214 * DEG, 263 * DEG]][col - 1] * 3)
                 ns = 12
                 l = {'linewidth': (1, 3)}
+            if lattice == 'hexagonal ':
+                grid = fig_hexagonal.HexagonalWheelTiling(6, 4, separation=3.02, angles=[0] + [[109.2 * DEG, 69.2 * DEG], [244.5 * DEG, 130.7 * DEG], [131 * DEG, 176.5 * DEG]][col-1] * 3)
             ax.set_title(phase + lattice + 'lattice ('+['', 'A', 'B', 'C'][col]+')', fontsize=9, fontweight='bold')
             ax.axis('off')
             grid.render_grid(ax, True, node_size=ns, **l)
@@ -300,9 +311,9 @@ def fig_7():
 if __name__ == '__main__':
     # fig_1()
     # fig_2()
-    # fig_4()
+    fig_4()
     # fig_5()
-    fig_6()
+    # fig_6()
 
 
 
