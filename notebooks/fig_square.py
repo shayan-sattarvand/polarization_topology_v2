@@ -1075,8 +1075,8 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
     theta_c_degrees = [0, 10, 45, 80]
-    ns_angle_degrees = np.linspace(0, 360, 200)
-    ew_angle_degrees = np.linspace(0, 360, 200)
+    ns_angle_degrees = np.linspace(0, 360, 500)
+    ew_angle_degrees = np.linspace(0, 360, 500)
     if preprocessed:
         metadata, panel_values = _load_fig4_cache()
         theta_c_degrees = metadata['theta_c_degrees']
@@ -1208,16 +1208,16 @@ if __name__ == "__main__":
     # fig_2_phase_diagram(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
-    # print("Generating figure 4 phase diagram...")
-    # fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=True)
+    print("Generating figure 4 phase diagram...")
+    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
-    grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [30 * DEG, 60 * DEG] * 2)
-    ax = plt.subplot()
-    grid.render_grid(ax)
-    plt.show()
-    print(grid.b1_matrix())
-    print(grid.b2_matrix())
-    print(grid.l1_laplacian())
-    print(grid.l1_eig())
+    # grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [30 * DEG, 60 * DEG] * 2)
+    # ax = plt.subplot()
+    # grid.render_grid(ax)
+    # plt.show()
+    # print(grid.b1_matrix())
+    # print(grid.b2_matrix())
+    # print(grid.l1_laplacian())
+    # print(grid.l1_eig())
 

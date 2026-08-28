@@ -577,8 +577,8 @@ def fig_4_phase_diagram(save=True, show=False, interactive=False, preprocessed=F
     '''Using the staggered angling, plot 4 figures showing a phase diagram of beta 1 for a 3x3 grid of wheels as a function of the NS angles and EW angles. The 4 figures differ only by center angle.'''
     fig, axes = plt.subplots(2, 2, figsize=(25, 10))
     theta_c_degrees = [0, 10, 20, 30]
-    ns_angle_degrees = np.linspace(0, 360, 200)
-    ew_angle_degrees = np.linspace(0, 360, 200)
+    ns_angle_degrees = np.linspace(0, 360, 500)
+    ew_angle_degrees = np.linspace(0, 360, 500)
     if preprocessed:
         metadata, panel_values = _load_fig4_cache()
         theta_c_degrees = metadata['theta_c_degrees']
