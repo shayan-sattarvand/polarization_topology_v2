@@ -610,7 +610,6 @@ class SquareWheelGrid:
                 btwn_wheel_connections.append(((i, j, 2), (i + 1, j, 4), J))  # connect spoke 2 of wheel (i, j) to spoke 4 of wheel (i + 1, j)
         self.btwn_wheel_connections = btwn_wheel_connections
 
-    
     def render_grid(self, ax, draw_dipoles=False, node_size=100, linewidth=(1,2)):
         '''Render the grid of wheels on the given matplotlib axis `ax`.'''
         for row in self.wheels:
@@ -875,7 +874,6 @@ class SquareWheelGrid:
             mat[n1_idx, -1] = -1
             mat[n2_idx, -1] = 1
         return mat
-
 
     def b2_matrix(self):
         mat = np.zeros((len(self.active_btwn_wheel_edges) + sum([sum([len(wheel.active_edges) for wheel in row]) for row in self.wheels]), self.rows * self.cols * self.num_triangles()))
