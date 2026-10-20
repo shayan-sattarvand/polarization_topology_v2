@@ -925,32 +925,6 @@ class SquareWheelGrid:
 
         return values, occurences
 
-    '''values = [float(vals[0])]
-    counts = [1]
-
-    for v in vals[0:]:
-        if np.isclose(v, values[-1], rtol=1e-8, atol=1e-10):
-            counts[-1] += 1
-        else:
-            values.append(v)
-            counts.append(1)
-
-    return np.array(values), np.array(counts)'''
-
-
-'''    def l1_eig_dist(self):
-        vals, _ = self.l1_eig()
-        vals = np.real_if_close(vals)
-        values, occurences = [], []
-        for val in vals:
-            if True in (a:=[math.isclose(val, i) for i in values]):
-                occurences[a.index(True)] += 1
-            else:
-                occurences.append(1)
-                values.append(val)
-
-        return values, occurences'''
-
 
 
 def fig1(save=True):
