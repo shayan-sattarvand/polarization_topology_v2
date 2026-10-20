@@ -309,11 +309,11 @@ def fig_7():
 
 
 if __name__ == '__main__':
-    # fig_1()
-    # fig_2()
-    fig_4()
-    # fig_5()
-    # fig_6()
+    #fig_1()
+    #fig_2()
+    #fig_4()
+    #fig_5()
+    fig_6()
 
 
 

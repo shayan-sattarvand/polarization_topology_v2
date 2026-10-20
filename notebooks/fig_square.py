@@ -909,9 +909,38 @@ class SquareWheelGrid:
     def l1_eig(self):
         #returns l1 eigenvalues and eigenvectors
         return eig(self.l1_laplacian())
-
+    
     def l1_eig_dist(self):
         vals, _ = self.l1_eig()
+        vals = np.real_if_close(vals)
+        vals = np.sort(vals)
+        
+        values, occurences = [float(vals[0])], [1]
+        for val in vals:
+            if np.isclose(val, values[-1], rtol=1e-8, atol=1e-10):
+                occurences[-1] += 1
+            else:
+                values.append(float(val))
+                occurences.append(1)
+
+        return values, occurences
+
+    '''values = [float(vals[0])]
+    counts = [1]
+
+    for v in vals[0:]:
+        if np.isclose(v, values[-1], rtol=1e-8, atol=1e-10):
+            counts[-1] += 1
+        else:
+            values.append(v)
+            counts.append(1)
+
+    return np.array(values), np.array(counts)'''
+
+
+'''    def l1_eig_dist(self):
+        vals, _ = self.l1_eig()
+        vals = np.real_if_close(vals)
         values, occurences = [], []
         for val in vals:
             if True in (a:=[math.isclose(val, i) for i in values]):
@@ -920,7 +949,8 @@ class SquareWheelGrid:
                 occurences.append(1)
                 values.append(val)
 
-        return values, occurences
+        return values, occurences'''
+
 
 
 def fig1(save=True):
@@ -1206,16 +1236,16 @@ if __name__ == "__main__":
     # fig_2_phase_diagram(save=True)
     # print("Generating figure 2.5 phase diagram...")
     # fig_2_5_phase_diagram(save=True)
-    print("Generating figure 4 phase diagram...")
-    fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
+    #print("Generating figure 4 phase diagram...")
+    #fig_4_phase_diagram(save=True, show=True, interactive=True, preprocessed=False)
     # print("Generating figure 5 phase diagram...")
     # fig_5_phase_diagram(save=True)
-    # grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [30 * DEG, 60 * DEG] * 2)
+    grid = SquareWheelGrid(3, 3, angles = [45 * DEG] + [30 * DEG, 60 * DEG] * 2)
     # ax = plt.subplot()
     # grid.render_grid(ax)
     # plt.show()
     # print(grid.b1_matrix())
     # print(grid.b2_matrix())
-    # print(grid.l1_laplacian())
-    # print(grid.l1_eig())
+    print(grid.l1_laplacian())
+    print(grid.l1_eig())
 
