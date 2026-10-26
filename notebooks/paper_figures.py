@@ -295,16 +295,16 @@ def fig_7():
     print('Plotting linear absorption...')
     for ax, w in zip([w1_spec, w2_spec, w3_spec], [w1, w2, w3]):
         print(f'Plotting linear absorption for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_linear_absorption(ax, zoom_factor = 0.25)
+        w.plot_linear_absorption(ax, zoom_factor = 1, redfield=True)
     print('Plotting 2DES spectra...')
     for ax, w in zip([w1_2des, w2_2des, w3_2des], [w1, w2, w3]):
         print(f'Plotting 2DES spectra for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des(ax, zoom_factor = 0.25, log=True)
+        w.plot_2des(ax, zoom_factor = 1, log=False, redfield=True)
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotopy(ax, zoom_factor = 0.25)
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_7.png'), dpi=300)
+        w.plot_2des_anisotropy(ax, zoom_factor = 1, redfield=True)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_7_redfield.png'), dpi=300)
 
 
 
@@ -313,7 +313,8 @@ if __name__ == '__main__':
     #fig_2()
     #fig_4()
     #fig_5()
-    fig_6()
+    #fig_6()
+    fig_7()
 
 
 
