@@ -59,6 +59,24 @@ K_s = 1.0
 NEW_J_CONDITION = True
 J_SQUARED_THRESHOLD = 0.3
 
+_TWO_DES_WORKER_WHEEL = None
+
+
+def _init_two_des_worker(wheel):
+    global _TWO_DES_WORKER_WHEEL
+    _TWO_DES_WORKER_WHEEL = wheel
+
+
+def _two_des_point_worker(args):
+    t1, t2, t3, sequence, redfield = args
+    if redfield:
+        return _TWO_DES_WORKER_WHEEL.two_des_spectrum_1pt_redfield(
+            t1, t2, t3, sequence=sequence
+        )
+    return _TWO_DES_WORKER_WHEEL.two_des_spectrum_1pt(
+        t1, t2, t3, sequence=sequence
+    )
+
 
 def _fig4_cache_paths():
     metadata_path = os.path.join(FIG4_CACHE_DIR, 'metadata.json')
@@ -561,23 +579,42 @@ class Wheel:
         signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
         return np.trace(signal_operator @ rho_total)
 
-    def two_des_spectrum(self, t2, sequence='XXXX', redfield=False):
+    def two_des_spectrum(
+        self, t2, sequence='XXXX', redfield=False, n_processes=None
+    ):
+        '''Compute a 2DES spectrum, evaluating time points in parallel.
+
+        ``n_processes`` controls the process-pool size. If omitted, one
+        process is created for each available CPU, capped by the number of
+        time points.
+        '''
         dt1 = 0.1
         dt3 = 0.1
-        t1 = np.arange(0, 50, dt1)
-        t3 = np.arange(0, 50, dt3)
+        t1 = np.arange(0, 25, dt1)
+        t3 = np.arange(0, 25, dt3)
         T1, T3 = np.meshgrid(t1, t3)
-        S = np.zeros_like(T1, dtype=complex)
-        for i in range(T1.shape[0]):
-            for j in range(T1.shape[1]):
-                if redfield:
-                    S[i, j] = self.two_des_spectrum_1pt_redfield(
-                        T1[i, j], t2, T3[i, j], sequence=sequence
-                    )
-                else:
-                    S[i, j] = self.two_des_spectrum_1pt(
-                        T1[i, j], t2, T3[i, j], sequence=sequence
-                    )
+        tasks = [
+            (T1[i, j], t2, T3[i, j], sequence, redfield)
+            for i in range(T1.shape[0])
+            for j in range(T1.shape[1])
+        ]
+        if n_processes is None:
+            n_processes = min(cpu_count(), len(tasks))
+        if n_processes < 1:
+            raise ValueError('n_processes must be positive')
+        n_processes = min(n_processes, len(tasks))
+        print("Using {} processes for 2DES spectrum computation".format(n_processes))
+        chunksize = max(1, len(tasks) // (n_processes * 4))
+
+        with Pool(
+            processes=n_processes,
+            initializer=_init_two_des_worker,
+            initargs=(self,),
+        ) as pool:
+            values = pool.map(
+                _two_des_point_worker, tasks, chunksize=chunksize
+            )
+        S = np.asarray(values, dtype=complex).reshape(T1.shape)
 
         # 2D Fourier transform
         S_fft = np.fft.fftshift(
@@ -597,8 +634,8 @@ class Wheel:
 
         return omega1, omega3, S_fft
 
-    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, redfield=False):
-        omega1, omega3, S = self.two_des_spectrum(t2, redfield=redfield)
+    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, redfield=False, n_processes=None):
+        omega1, omega3, S = self.two_des_spectrum(t2, redfield=redfield, n_processes=n_processes)
 
         zoom_factor = float(zoom_factor)
         if zoom_factor <= 0:
@@ -639,9 +676,9 @@ class Wheel:
         else: 
             plt.colorbar(im, ax=ax, label='Log Signal Intensity')
 
-    def two_des_anisotropy(self, t2, redfield=False):
+    def two_des_anisotropy(self, t2, redfield=False, n_processes=None):
         omega1, omega3, S_xxxx = self.two_des_spectrum(
-            t2, sequence='XXXX', redfield=redfield
+            t2, sequence='XXXX', redfield=redfield, n_processes=n_processes
         )
         _, _, S_xyxy = self.two_des_spectrum(
             t2, sequence='XYXY', redfield=redfield
