@@ -64,6 +64,7 @@ _TWO_DES_WORKER_WHEEL = None
 
 def _init_two_des_worker(wheel):
     global _TWO_DES_WORKER_WHEEL
+    wheel._redfield_t1_cache = {}
     _TWO_DES_WORKER_WHEEL = wheel
 
 
@@ -120,6 +121,7 @@ class Wheel:
         ])
         self.spoke_angles = angles.copy()
         self.center_angle = self.spoke_angles.pop(0) # remove the first angle, which is for the center node
+        self._redfield_t1_cache = {}
         active_edges = []
         all_edges = []
         for i in range(self.n): # between center and spokes
@@ -525,50 +527,67 @@ class Wheel:
                 return rho @ td_op_raising_x if x else rho @ td_op_raising_y
             return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
 
+        cache_key = (
+            float(t1),
+            sequence,
+            float(eta),
+            float(cutoff),
+            float(site_coupling),
+            float(temperature),
+            float(sec_cutoff),
+        )
+        t1_states = self._redfield_t1_cache.get(cache_key)
+        if t1_states is None:
+            t1_states = (
+                propagate(
+                    operation(rho_0.copy(), True, True, sequence[0] == 'X'),
+                    t1,
+                ),
+                propagate(
+                    operation(rho_0.copy(), False, False, sequence[0] == 'X'),
+                    t1,
+                ),
+            )
+            self._redfield_t1_cache[cache_key] = t1_states
+
         pathways = []
 
-        rho_N_ESA = operation(rho_0.copy(), True, True, sequence[0] == 'X')
-        rho_N_ESA = propagate(rho_N_ESA, t1)
+        rho_N_ESA = t1_states[0]
         rho_N_ESA = operation(rho_N_ESA, False, False, sequence[1] == 'X')
         rho_N_ESA = propagate(rho_N_ESA, t2)
         rho_N_ESA = operation(rho_N_ESA, True, True, sequence[2] == 'X')
         rho_N_ESA = propagate(rho_N_ESA, t3)
         pathways.append(rho_N_ESA)
 
-        rho_R_ESA = operation(rho_0.copy(), False, False, sequence[0] == 'X')
-        rho_R_ESA = propagate(rho_R_ESA, t1)
+        rho_R_ESA = t1_states[1]
         rho_R_ESA = operation(rho_R_ESA, True, True, sequence[1] == 'X')
         rho_R_ESA = propagate(rho_R_ESA, t2)
         rho_R_ESA = operation(rho_R_ESA, False, False, sequence[2] == 'X')
         rho_R_ESA = propagate(rho_R_ESA, t3)
         pathways.append(rho_R_ESA)
 
-        rho_N_GSB = operation(rho_0.copy(), True, True, sequence[0] == 'X')
-        rho_N_GSB = propagate(rho_N_GSB, t1)
+        rho_N_GSB = t1_states[0]
         rho_N_GSB = operation(rho_N_GSB, True, False, sequence[1] == 'X')
         rho_N_GSB = propagate(rho_N_GSB, t2)
         rho_N_GSB = operation(rho_N_GSB, True, True, sequence[2] == 'X')
         rho_N_GSB = propagate(rho_N_GSB, t3)
         pathways.append(rho_N_GSB)
 
-        rho_R_GSB = operation(rho_0.copy(), False, False, sequence[0] == 'X')
-        rho_R_GSB = propagate(rho_R_GSB, t1)
+        rho_R_GSB = t1_states[1]
         rho_R_GSB = operation(rho_R_GSB, False, True, sequence[1] == 'X')
         rho_R_GSB = propagate(rho_R_GSB, t2)
         rho_R_GSB = operation(rho_R_GSB, False, False, sequence[2] == 'X')
         rho_R_GSB = propagate(rho_R_GSB, t3)
         pathways.append(rho_R_GSB)
 
-        rho_N_SE = operation(rho_0.copy(), True, True, sequence[0] == 'X')
-        rho_N_SE = propagate(rho_N_SE, t1)
+        rho_N_SE = t1_states[0]
         rho_N_SE = operation(rho_N_SE, False, False, sequence[1] == 'X')
         rho_N_SE = propagate(rho_N_SE, t2)
         rho_N_SE = operation(rho_N_SE, True, False, sequence[2] == 'X')
         rho_N_SE = propagate(rho_N_SE, t3)
         pathways.append(rho_N_SE)
 
-        rho_R_SE = operation(rho_0.copy(), False, False, sequence[0] == 'X')
-        rho_R_SE = propagate(rho_R_SE, t1)
+        rho_R_SE = t1_states[1]
         rho_R_SE = operation(rho_R_SE, True, True, sequence[1] == 'X')
         rho_R_SE = propagate(rho_R_SE, t2)
         rho_R_SE = operation(rho_R_SE, False, True, sequence[2] == 'X')
@@ -604,8 +623,10 @@ class Wheel:
             raise ValueError('n_processes must be positive')
         n_processes = min(n_processes, len(tasks))
         print("Using {} processes for 2DES spectrum computation".format(n_processes))
-        chunksize = max(1, len(tasks) // (n_processes * 4))
+        chunksize = max(1, len(tasks) // (n_processes * 20))
 
+        if redfield:
+            self._redfield_t1_cache = {}
         with Pool(
             processes=n_processes,
             initializer=_init_two_des_worker,
