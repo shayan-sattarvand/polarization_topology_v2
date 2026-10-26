@@ -381,7 +381,187 @@ class Wheel:
         # # The signal
         # return np.trace(td_op @ rho_S_N_ESA)
 
-    def two_des_spectrum(self, t2, sequence='XXXX'):
+    def two_des_spectrum_1pt_redfield(
+        self,
+        t1,
+        t2,
+        t3,
+        sequence='XXXX',
+        eta=0.01,
+        cutoff=10.0,
+        site_coupling=1.0,
+        temperature=0.0,
+        sec_cutoff=-1.0,
+    ):
+        '''Compute a 2DES point using non-secular Redfield propagation.
+
+        The pulse sequence and return value are the same as
+        :meth:`two_des_spectrum_1pt`.  Between pulses, QuTiP's
+        ``brmesolve`` propagates the density matrix with site-energy
+        fluctuations coupled to a zero-temperature Ohmic bath.
+
+        Parameters
+        ----------
+        eta : float, optional
+            Dimensionless Ohmic bath coupling strength. Defaults to ``0.01``.
+        cutoff : float, optional
+            Ohmic bath cutoff frequency. Defaults to ``10.0``.
+        site_coupling : float, optional
+            Amplitude of each site's energy-fluctuation operator. Defaults to
+            ``1.0``.
+        temperature : float, optional
+            Bath temperature in the same energy units as the Hamiltonian, with
+            Boltzmann's constant set to one. Defaults to ``0.0``.
+        sec_cutoff : float, optional
+            QuTiP Redfield secular cutoff. A negative value disables the
+            secular approximation; the default is ``-1.0``.
+        '''
+        try:
+            from qutip import Qobj, brmesolve
+        except ImportError as exc:
+            raise ImportError(
+                'two_des_spectrum_1pt_redfield requires the qutip package'
+            ) from exc
+        if eta < 0:
+            raise ValueError('eta must be non-negative')
+        if cutoff <= 0:
+            raise ValueError('cutoff must be positive')
+        if temperature < 0:
+            raise ValueError('temperature must be non-negative')
+
+        ham = self.construct_hamiltonian()
+        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+        ham_qobj = Qobj(ham)
+
+        rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho_0[0, 0] = 1.0
+        td_op_x = [0, np.cos(self.center_angle)] + [
+            np.cos(angle) for angle in self.spoke_angles
+        ]
+        td_op_y = [0, np.sin(self.center_angle)] + [
+            np.sin(angle) for angle in self.spoke_angles
+        ]
+
+        td_op_x = np.array(td_op_x, dtype=complex)
+        td_op_x = np.vstack((
+            td_op_x,
+            np.zeros((self.n + 1, self.n + 2), dtype=complex),
+        ))
+        td_op_lowering_x = td_op_x
+        td_op_raising_x = td_op_x.T
+
+        td_op_y = np.array(td_op_y, dtype=complex)
+        td_op_y = np.vstack((
+            td_op_y,
+            np.zeros((self.n + 1, self.n + 2), dtype=complex),
+        ))
+        td_op_lowering_y = td_op_y
+        td_op_raising_y = td_op_y.T
+
+        # Site-energy fluctuations do not couple the ground state.  A
+        # non-secular Redfield treatment is requested with sec_cutoff=-1.
+        redfield_operators = []
+        for site in range(1, self.n + 2):
+            coupling_operator = np.zeros_like(ham, dtype=complex)
+            coupling_operator[site, site] = site_coupling
+            coupling_operator = Qobj(coupling_operator)
+
+            def ohmic_spectrum(omega):
+                omega = float(omega)
+                frequency = abs(omega)
+                if frequency == 0.0:
+                    return 0.0
+                spectral_density = (
+                    2.0 * np.pi * eta * frequency
+                    * np.exp(-frequency / cutoff)
+                )
+                if temperature == 0.0:
+                    return spectral_density if omega > 0.0 else 0.0
+                occupation = np.expm1(frequency / temperature)
+                occupation = 1.0 / occupation
+                return spectral_density * (
+                    occupation + 1.0 if omega > 0.0 else occupation
+                )
+
+            redfield_operators.append((coupling_operator, ohmic_spectrum))
+
+        def propagate(rho, duration):
+            if duration == 0:
+                return rho
+            result = brmesolve(
+                ham_qobj,
+                Qobj(rho),
+                [0.0, duration],
+                redfield_operators,
+                sec_cutoff=sec_cutoff,
+            )
+            return result.states[-1].full()
+
+        def operation(rho, left, raising, x):
+            if left:
+                if raising:
+                    return td_op_raising_x @ rho if x else td_op_raising_y @ rho
+                return td_op_lowering_x @ rho if x else td_op_lowering_y @ rho
+            if raising:
+                return rho @ td_op_raising_x if x else rho @ td_op_raising_y
+            return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
+
+        pathways = []
+
+        rho_N_ESA = operation(rho_0.copy(), True, True, sequence[0] == 'X')
+        rho_N_ESA = propagate(rho_N_ESA, t1)
+        rho_N_ESA = operation(rho_N_ESA, False, False, sequence[1] == 'X')
+        rho_N_ESA = propagate(rho_N_ESA, t2)
+        rho_N_ESA = operation(rho_N_ESA, True, True, sequence[2] == 'X')
+        rho_N_ESA = propagate(rho_N_ESA, t3)
+        pathways.append(rho_N_ESA)
+
+        rho_R_ESA = operation(rho_0.copy(), False, False, sequence[0] == 'X')
+        rho_R_ESA = propagate(rho_R_ESA, t1)
+        rho_R_ESA = operation(rho_R_ESA, True, True, sequence[1] == 'X')
+        rho_R_ESA = propagate(rho_R_ESA, t2)
+        rho_R_ESA = operation(rho_R_ESA, False, False, sequence[2] == 'X')
+        rho_R_ESA = propagate(rho_R_ESA, t3)
+        pathways.append(rho_R_ESA)
+
+        rho_N_GSB = operation(rho_0.copy(), True, True, sequence[0] == 'X')
+        rho_N_GSB = propagate(rho_N_GSB, t1)
+        rho_N_GSB = operation(rho_N_GSB, True, False, sequence[1] == 'X')
+        rho_N_GSB = propagate(rho_N_GSB, t2)
+        rho_N_GSB = operation(rho_N_GSB, True, True, sequence[2] == 'X')
+        rho_N_GSB = propagate(rho_N_GSB, t3)
+        pathways.append(rho_N_GSB)
+
+        rho_R_GSB = operation(rho_0.copy(), False, False, sequence[0] == 'X')
+        rho_R_GSB = propagate(rho_R_GSB, t1)
+        rho_R_GSB = operation(rho_R_GSB, False, True, sequence[1] == 'X')
+        rho_R_GSB = propagate(rho_R_GSB, t2)
+        rho_R_GSB = operation(rho_R_GSB, False, False, sequence[2] == 'X')
+        rho_R_GSB = propagate(rho_R_GSB, t3)
+        pathways.append(rho_R_GSB)
+
+        rho_N_SE = operation(rho_0.copy(), True, True, sequence[0] == 'X')
+        rho_N_SE = propagate(rho_N_SE, t1)
+        rho_N_SE = operation(rho_N_SE, False, False, sequence[1] == 'X')
+        rho_N_SE = propagate(rho_N_SE, t2)
+        rho_N_SE = operation(rho_N_SE, True, False, sequence[2] == 'X')
+        rho_N_SE = propagate(rho_N_SE, t3)
+        pathways.append(rho_N_SE)
+
+        rho_R_SE = operation(rho_0.copy(), False, False, sequence[0] == 'X')
+        rho_R_SE = propagate(rho_R_SE, t1)
+        rho_R_SE = operation(rho_R_SE, True, True, sequence[1] == 'X')
+        rho_R_SE = propagate(rho_R_SE, t2)
+        rho_R_SE = operation(rho_R_SE, False, True, sequence[2] == 'X')
+        rho_R_SE = propagate(rho_R_SE, t3)
+        pathways.append(rho_R_SE)
+
+        rho_total = sum(pathways)
+        signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
+        return np.trace(signal_operator @ rho_total)
+
+    def two_des_spectrum(self, t2, sequence='XXXX', redfield=False):
         dt1 = 0.1
         dt3 = 0.1
         t1 = np.arange(0, 50, dt1)
@@ -390,7 +570,14 @@ class Wheel:
         S = np.zeros_like(T1, dtype=complex)
         for i in range(T1.shape[0]):
             for j in range(T1.shape[1]):
-                S[i, j] = self.two_des_spectrum_1pt(T1[i, j], t2, T3[i, j], sequence=sequence)
+                if redfield:
+                    S[i, j] = self.two_des_spectrum_1pt_redfield(
+                        T1[i, j], t2, T3[i, j], sequence=sequence
+                    )
+                else:
+                    S[i, j] = self.two_des_spectrum_1pt(
+                        T1[i, j], t2, T3[i, j], sequence=sequence
+                    )
 
         # 2D Fourier transform
         S_fft = np.fft.fftshift(
@@ -410,8 +597,8 @@ class Wheel:
 
         return omega1, omega3, S_fft
 
-    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False):
-        omega1, omega3, S = self.two_des_spectrum(t2)
+    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, redfield=False):
+        omega1, omega3, S = self.two_des_spectrum(t2, redfield=redfield)
 
         zoom_factor = float(zoom_factor)
         if zoom_factor <= 0:
@@ -452,15 +639,23 @@ class Wheel:
         else: 
             plt.colorbar(im, ax=ax, label='Log Signal Intensity')
 
-    def two_des_anisotropy(self, t2):
-        omega1, omega3, S_xxxx = self.two_des_spectrum(t2, sequence='XXXX')
-        _, _, S_xyxy = self.two_des_spectrum(t2, sequence='XYXY')
+    def two_des_anisotropy(self, t2, redfield=False):
+        omega1, omega3, S_xxxx = self.two_des_spectrum(
+            t2, sequence='XXXX', redfield=redfield
+        )
+        _, _, S_xyxy = self.two_des_spectrum(
+            t2, sequence='XYXY', redfield=redfield
+        )
         with np.errstate(divide='ignore', invalid='ignore'):
             anisotropy = (S_xxxx - S_xyxy) / (S_xxxx + 2 * S_xyxy)
         return omega1, omega3, anisotropy
 
-    def plot_2des_anisotopy(self, ax, t2=1.0, zoom_factor=1.0):
-        omega1, omega3, anisotropy = self.two_des_anisotropy(t2)
+    def plot_2des_anisotropy(
+        self, ax, t2=1.0, zoom_factor=1.0, redfield=False
+    ):
+        omega1, omega3, anisotropy = self.two_des_anisotropy(
+            t2, redfield=redfield
+        )
 
         zoom_factor = float(zoom_factor)
         if zoom_factor <= 0:
@@ -496,6 +691,14 @@ class Wheel:
         ax.set_title(f'2DES Anisotropy at $t_2={t2}$')
         plt.colorbar(im, ax=ax, label='Anisotropy')
 
+    def plot_2des_anisotopy(
+        self, ax, t2=1.0, zoom_factor=1.0, redfield=False
+    ):
+        '''Backward-compatible alias for the correctly spelled method.'''
+        return self.plot_2des_anisotropy(
+            ax, t2=t2, zoom_factor=zoom_factor, redfield=redfield
+        )
+
     def linear_absorption_1pt(self, t, x=True):
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
@@ -518,18 +721,110 @@ class Wheel:
 
         return np.trace(td_op @ rho)
 
-    def linear_absorption_spectrum(self, x=True):
+    def linear_absorption_1pt_redfield(
+        self,
+        t,
+        x=True,
+        eta=0.01,
+        cutoff=10.0,
+        site_coupling=1.0,
+        temperature=0.0,
+        sec_cutoff=-1.0,
+    ):
+        '''Compute a linear-absorption point using Redfield propagation.
+
+        The bath parameters have the same defaults and meaning as in
+        :meth:`two_des_spectrum_1pt_redfield`.
+        '''
+        try:
+            from qutip import Qobj, brmesolve
+        except ImportError as exc:
+            raise ImportError(
+                'linear_absorption_1pt_redfield requires the qutip package'
+            ) from exc
+        if eta < 0:
+            raise ValueError('eta must be non-negative')
+        if cutoff <= 0:
+            raise ValueError('cutoff must be positive')
+        if temperature < 0:
+            raise ValueError('temperature must be non-negative')
+
+        ham = self.construct_hamiltonian()
+        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+        ham_qobj = Qobj(ham)
+
+        rho = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho[0, 0] = 1.0
+        if x:
+            td_op = [0, np.cos(self.center_angle)] + [
+                np.cos(angle) for angle in self.spoke_angles
+            ]
+        else:
+            td_op = [0, np.sin(self.center_angle)] + [
+                np.sin(angle) for angle in self.spoke_angles
+            ]
+        td_op = np.array(td_op, dtype=complex)
+        td_op = np.vstack((
+            td_op,
+            np.zeros((self.n + 1, self.n + 2), dtype=complex),
+        ))
+        td_op += td_op.T
+        rho = -1j * (td_op @ rho - rho @ td_op)
+
+        redfield_operators = []
+        for site in range(1, self.n + 2):
+            coupling_operator = np.zeros_like(ham, dtype=complex)
+            coupling_operator[site, site] = site_coupling
+            coupling_operator = Qobj(coupling_operator)
+
+            def ohmic_spectrum(omega):
+                omega = float(omega)
+                frequency = abs(omega)
+                if frequency == 0.0:
+                    return 0.0
+                spectral_density = (
+                    2.0 * np.pi * eta * frequency
+                    * np.exp(-frequency / cutoff)
+                )
+                if temperature == 0.0:
+                    return spectral_density if omega > 0.0 else 0.0
+                occupation = 1.0 / np.expm1(frequency / temperature)
+                return spectral_density * (
+                    occupation + 1.0 if omega > 0.0 else occupation
+                )
+
+            redfield_operators.append((coupling_operator, ohmic_spectrum))
+
+        if t != 0:
+            result = brmesolve(
+                ham_qobj,
+                Qobj(rho),
+                [0.0, t],
+                redfield_operators,
+                sec_cutoff=sec_cutoff,
+            )
+            rho = result.states[-1].full()
+
+        return np.trace(td_op @ rho)
+
+    def linear_absorption_spectrum(self, x=True, redfield=False):
         dt = 0.1
         t = np.arange(0, 30, dt)
         S = np.zeros_like(t, dtype=complex)
         for i in range(t.shape[0]):
-            S[i]+=self.linear_absorption_1pt(t[i], x)
+            if redfield:
+                S[i] += self.linear_absorption_1pt_redfield(t[i], x)
+            else:
+                S[i] += self.linear_absorption_1pt(t[i], x)
         S_fft = np.fft.fftshift(np.fft.fft(S))
         omega = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(len(t), d=dt))
         return omega, S_fft
 
-    def plot_linear_absorption(self, ax, x=True, zoom_factor=1.0):
-        omega, S = self.linear_absorption_spectrum(x)
+    def plot_linear_absorption(
+        self, ax, x=True, zoom_factor=1.0, redfield=False
+    ):
+        omega, S = self.linear_absorption_spectrum(x, redfield=redfield)
 
         zoom_factor = float(zoom_factor)
         if zoom_factor <= 0:
@@ -1222,4 +1517,3 @@ if __name__ == "__main__":
     # print(grid.b2_matrix())
     print(grid.l1_laplacian())
     print(grid.l1_eig())
-
