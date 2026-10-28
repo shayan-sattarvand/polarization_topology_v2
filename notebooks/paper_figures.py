@@ -232,6 +232,50 @@ def fig_4():
             
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_4.png'), dpi=300)
 
+def finding_fig_5():
+    while True:
+        angles = (np.random.uniform(0, 360, 5) * DEG).tolist()
+        grid = fig_square.SquareWheelGrid(5, 5, angles=angles)
+        if grid.cc_density() == 0:
+            continue # we're looking for sparse
+        grid.render_grid(plt.gca(), True, node_size=50)
+        plt.axis('off')
+        plt.show()
+        save = input('Save figure? (y/n): ')
+        if save.lower() == 'y':
+            print(angles)
+        plt.cla()
+
+def fig_5():
+    data = [ #connected, layered, sparse
+        [2.0640089550470275, 2.7188247771847087, 2.1061547055532284, 0.4336871863070836, 2.2201754873679818],
+        [3.4667595321417966, 4.04665914202089, 6.161674425524274, 2.7303146029232193, 0.15432926951351605],
+        [5.598134648805069, 4.281450746115639, 4.255679680582351, 0.010301181378933403, 4.819290780319332], 
+        [1.703139775941826, 4.521955228932793, 4.643514420800798, 0.27780676576839114, 2.036275762609642],
+        [2.701808467306757, 4.97965148424765, 2.4523839788438404, 4.042872700398317, 3.4203660144934607],
+        [0.3668007926648161, 3.460828135155743, 3.144397641301067, 1.6196549562403668, 0.6078518381542205],
+        [1.1205781499430654, 1.4333733986427475, 1.2956769183634305, 4.276789925314377, 3.17465174788541],
+        [1.4939094928746095, 2.7869111467524483, 4.005421609490494, 5.44798914957543, 3.598112578595217], 
+        [4.211720492087988, 3.5302188172745637, 3.378575310767112, 0.5339011306234152, 0.19335705513097326]
+    ]
+    fig = plt.figure(layout = "constrained", figsize=(12, 12))
+    gs = fig.add_gridspec(4, 3, height_ratios = [0.1, 1, 1, 1])
+    for i in range(3):
+        for j in range(3):
+            ax = fig.add_subplot(gs[i + 1, j])
+            angles = data[j * 3 + i]
+            grid = fig_square.SquareWheelGrid(5, 5, angles=angles)
+            grid.render_grid(ax, True, node_size=50)
+            ax.set_title(f'Angles: {[round(x / DEG) for x in angles]}, $\\rho_\\chi = {grid.euler_characteristic_density():.2f}$', fontsize=8)
+            ax.axis('off')
+    a, b, c = [fig.add_subplot(gs[0, i]) for i in range(3)]
+    for i in [a, b, c]:
+        i.axis('off')
+    a.text(0.5, 0.5, 'Connected', ha='center', va='center', fontsize=14, fontweight='bold', transform=a.transAxes)
+    b.text(0.5, 0.5, 'Layered', ha='center', va='center', fontsize=14, fontweight='bold', transform=b.transAxes)
+    c.text(0.5, 0.5, 'Sparse', ha='center', va='center', fontsize=14, fontweight='bold', transform=c.transAxes)
+    plt.savefig(os.path.join(FIGURES_DIR, 'fig_5.png'), dpi=300)
+
 def fig_6():
     fig = plt.figure(layout = "constrained", figsize=(9, 6))
     gs = fig.add_gridspec(2, 2, height_ratios = [1, 1])
@@ -309,12 +353,13 @@ def fig_7():
 
 
 if __name__ == '__main__':
-    #fig_1()
-    #fig_2()
-    #fig_4()
-    #fig_5()
-    #fig_6()
-    fig_7()
+    # fig_1()
+    # fig_2()
+    # fig_4()
+    # finding_fig_5()
+    fig_5()
+    # fig_6()
+    # fig_7()
 
 
 
