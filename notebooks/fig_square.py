@@ -70,10 +70,6 @@ def _init_two_des_worker(wheel):
 
 def _two_des_point_worker(args):
     t1, t2, t3, sequence, redfield = args
-    if redfield:
-        return _TWO_DES_WORKER_WHEEL.two_des_spectrum_1pt_redfield(
-            t1, t2, t3, sequence=sequence
-        )
     return _TWO_DES_WORKER_WHEEL.two_des_spectrum_1pt(
         t1, t2, t3, sequence=sequence
     )
@@ -406,11 +402,11 @@ class Wheel:
         # # The signal
         # return np.trace(td_op @ rho_S_N_ESA)
 
-    def two_des_spectrum_1pt_redfield(
+    def two_des_spectrum_1row_redfield(
         self,
         t1,
         t2,
-        t3,
+        t3_values,
         sequence='XXXX',
         eta=0.01,
         cutoff=2.0,
@@ -419,12 +415,13 @@ class Wheel:
         sec_cutoff=-1.0,
         nsteps=1000000,
     ):
-        '''Compute a 2DES point using non-secular Redfield propagation.
+        '''Compute one 2DES row using non-secular Redfield propagation.
 
-        The pulse sequence and return value are the same as
-        :meth:`two_des_spectrum_1pt`.  Between pulses, QuTiP's
-        ``brmesolve`` propagates the density matrix with site-energy
-        fluctuations coupled to a zero-temperature Ohmic bath.
+        ``t3_values`` contains all detection times for one ``t1`` value.
+        Each pathway is propagated through the complete ``t3_values`` grid,
+        so the row is returned with one solver pass per pathway rather than
+        one solver pass per 2DES point.  The ``t1`` states are shared with
+        other rows through the Redfield cache.
 
         Parameters
         ----------
@@ -452,7 +449,7 @@ class Wheel:
             from qutip import Qobj, brmesolve
         except ImportError as exc:
             raise ImportError(
-                'two_des_spectrum_1pt_redfield requires the qutip package'
+                'two_des_spectrum_1row_redfield requires the qutip package'
             ) from exc
         if eta < 0:
             raise ValueError('eta must be non-negative')
@@ -464,6 +461,12 @@ class Wheel:
             raise ValueError('nsteps must be positive')
         if t1 < 0:
             raise ValueError('t1 must be non-negative')
+        t3_values = np.asarray(t3_values, dtype=float)
+        if t3_values.ndim != 1:
+            raise ValueError('t3_values must be one-dimensional')
+        if np.any(t3_values < 0):
+            raise ValueError('t3_values must be non-negative')
+        solver_times = np.unique(np.concatenate(([0.0], t3_values)))
 
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
@@ -593,53 +596,38 @@ class Wheel:
                 t1_cache[round(float(time), 12)] = (state_a, state_b)
             t1_states = t1_cache[t1_key]
 
-        pathways = []
-
-        rho_N_ESA = t1_states[0]
-        rho_N_ESA = operation(rho_N_ESA, False, False, sequence[1] == 'X')
-        rho_N_ESA = propagate(rho_N_ESA, [0.0, t2])[-1]
-        rho_N_ESA = operation(rho_N_ESA, True, True, sequence[2] == 'X')
-        rho_N_ESA = propagate(rho_N_ESA, [0.0, t3])[-1]
-        pathways.append(rho_N_ESA)
-
-        rho_R_ESA = t1_states[1]
-        rho_R_ESA = operation(rho_R_ESA, True, True, sequence[1] == 'X')
-        rho_R_ESA = propagate(rho_R_ESA, [0.0, t2])[-1]
-        rho_R_ESA = operation(rho_R_ESA, False, False, sequence[2] == 'X')
-        rho_R_ESA = propagate(rho_R_ESA, [0.0, t3])[-1]
-        pathways.append(rho_R_ESA)
-
-        rho_N_GSB = t1_states[0]
-        rho_N_GSB = operation(rho_N_GSB, True, False, sequence[1] == 'X')
-        rho_N_GSB = propagate(rho_N_GSB, [0.0, t2])[-1]
-        rho_N_GSB = operation(rho_N_GSB, True, True, sequence[2] == 'X')
-        rho_N_GSB = propagate(rho_N_GSB, [0.0, t3])[-1]
-        pathways.append(rho_N_GSB)
-
-        rho_R_GSB = t1_states[1]
-        rho_R_GSB = operation(rho_R_GSB, False, True, sequence[1] == 'X')
-        rho_R_GSB = propagate(rho_R_GSB, [0.0, t2])[-1]
-        rho_R_GSB = operation(rho_R_GSB, False, False, sequence[2] == 'X')
-        rho_R_GSB = propagate(rho_R_GSB, [0.0, t3])[-1]
-        pathways.append(rho_R_GSB)
-
-        rho_N_SE = t1_states[0]
-        rho_N_SE = operation(rho_N_SE, False, False, sequence[1] == 'X')
-        rho_N_SE = propagate(rho_N_SE, [0.0, t2])[-1]
-        rho_N_SE = operation(rho_N_SE, True, False, sequence[2] == 'X')
-        rho_N_SE = propagate(rho_N_SE, [0.0, t3])[-1]
-        pathways.append(rho_N_SE)
-
-        rho_R_SE = t1_states[1]
-        rho_R_SE = operation(rho_R_SE, True, True, sequence[1] == 'X')
-        rho_R_SE = propagate(rho_R_SE, [0.0, t2])[-1]
-        rho_R_SE = operation(rho_R_SE, False, True, sequence[2] == 'X')
-        rho_R_SE = propagate(rho_R_SE, [0.0, t3])[-1]
-        pathways.append(rho_R_SE)
-
-        rho_total = sum(pathways)
         signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
-        return np.trace(signal_operator @ rho_total)
+        pathway_specs = (
+            (t1_states[0], False, False, True, True),
+            (t1_states[1], True, True, False, False),
+            (t1_states[0], True, False, True, True),
+            (t1_states[1], False, True, False, False),
+            (t1_states[0], False, False, True, False),
+            (t1_states[1], True, True, False, True),
+        )
+        pathways = []
+        for rho, left_t2, raising_t2, left_t3, raising_t3 in pathway_specs:
+            rho = operation(rho, left_t2, raising_t2, sequence[1] == 'X')
+            rho = propagate(rho, [0.0, t2])[-1]
+            rho = operation(rho, left_t3, raising_t3, sequence[2] == 'X')
+            states = propagate(rho, solver_times)
+            states_by_time = {
+                round(float(time), 12): state
+                for time, state in zip(solver_times, states)
+            }
+            pathways.append([
+                states_by_time[round(float(time), 12)]
+                for time in t3_values
+            ])
+
+        rho_totals = [
+            sum(pathway[index] for pathway in pathways)
+            for index in range(t3_values.size)
+        ]
+        return np.asarray([
+            np.trace(signal_operator @ rho_total)
+            for rho_total in rho_totals
+        ])
 
     def two_des_spectrum(
         self, t2, sequence='XXXX', redfield=False, n_processes=None
@@ -664,15 +652,13 @@ class Wheel:
             raise ValueError('n_processes must be positive')
         if redfield:
             self._redfield_t1_cache = {}
-            indexed_tasks = sorted(
-                enumerate(tasks),
-                key=lambda indexed_task: indexed_task[1][0],
-                reverse=True,
-            )
-            values = [None] * len(tasks)
-            for index, task in indexed_tasks:
-                values[index] = self.two_des_spectrum_1pt_redfield(
-                    task[0], task[1], task[2], sequence=task[3]
+            values = np.empty(T1.shape, dtype=complex)
+            for column in range(t1.size - 1, -1, -1):
+                values[:, column] = self.two_des_spectrum_1row_redfield(
+                    t1[column],
+                    t2,
+                    t3,
+                    sequence=sequence,
                 )
         else:
             if n_processes is None:
@@ -690,7 +676,10 @@ class Wheel:
                 values = pool.map(
                     _two_des_point_worker, tasks, chunksize=chunksize
                 )
-        S = np.asarray(values, dtype=complex).reshape(T1.shape)
+        if not redfield:
+            S = np.asarray(values, dtype=complex).reshape(T1.shape)
+        else:
+            S = values
 
         # 2D Fourier transform
         S_fft = np.fft.fftshift(
@@ -859,7 +848,7 @@ class Wheel:
         '''Compute a linear-absorption point using Redfield propagation.
 
         The bath parameters have the same defaults and meaning as in
-        :meth:`two_des_spectrum_1pt_redfield`.
+        :meth:`two_des_spectrum_1row_redfield`.
         '''
         try:
             from qutip import Qobj, brmesolve
