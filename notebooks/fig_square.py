@@ -122,6 +122,7 @@ class Wheel:
         self.spoke_angles = angles.copy()
         self.center_angle = self.spoke_angles.pop(0) # remove the first angle, which is for the center node
         self._redfield_t1_cache = {}
+        self._redfield_linear_absorption_cache = {}
         active_edges = []
         all_edges = []
         for i in range(self.n): # between center and spokes
@@ -416,6 +417,7 @@ class Wheel:
         site_coupling=1.0,
         temperature=2.0,
         sec_cutoff=-1.0,
+        nsteps=1000000,
     ):
         '''Compute a 2DES point using non-secular Redfield propagation.
 
@@ -442,6 +444,9 @@ class Wheel:
         sec_cutoff : float, optional
             QuTiP Redfield secular cutoff. A negative value disables the
             secular approximation; the default is ``-1.0``.
+        nsteps : int, optional
+            Maximum number of internal integration steps for QuTiP's solver
+            per requested output interval. Defaults to ``1000000``.
         '''
         try:
             from qutip import Qobj, brmesolve
@@ -455,6 +460,10 @@ class Wheel:
             raise ValueError('cutoff must be positive')
         if temperature < 0:
             raise ValueError('temperature must be non-negative')
+        if nsteps < 1:
+            raise ValueError('nsteps must be positive')
+        if t1 < 0:
+            raise ValueError('t1 must be non-negative')
 
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
@@ -513,17 +522,19 @@ class Wheel:
 
             redfield_operators.append((coupling_operator, ohmic_spectrum))
 
-        def propagate(rho, duration):
-            if duration == 0:
-                return rho
+        def propagate(rho, times):
+            times = np.asarray(times, dtype=float)
+            if times[-1] == times[0]:
+                return [rho]
             result = brmesolve(
                 ham_qobj,
                 Qobj(rho),
-                [0.0, duration],
+                times,
                 redfield_operators,
                 sec_cutoff=sec_cutoff,
+                options={'nsteps': nsteps},
             )
-            return result.states[-1].full()
+            return [state.full() for state in result.states]
 
         def operation_naive(rho, left, raising, x):
             if left:
@@ -540,70 +551,90 @@ class Wheel:
             )
 
         cache_key = (
-            float(t1),
             sequence,
             float(eta),
             float(cutoff),
             float(site_coupling),
             float(temperature),
             float(sec_cutoff),
+            int(nsteps),
         )
-        t1_states = self._redfield_t1_cache.get(cache_key)
+        t1_cache = self._redfield_t1_cache.setdefault(cache_key, {})
+        initial_states = (
+            operation(rho_0.copy(), True, True, sequence[0] == 'X'),
+            operation(rho_0.copy(), False, False, sequence[0] == 'X'),
+        )
+        t1_cache.setdefault(0.0, initial_states)
+
+        t1_key = round(float(t1), 12)
+        t1_states = t1_cache.get(t1_key)
         if t1_states is None:
-            t1_states = (
-                propagate(
-                    operation(rho_0.copy(), True, True, sequence[0] == 'X'),
-                    t1,
-                ),
-                propagate(
-                    operation(rho_0.copy(), False, False, sequence[0] == 'X'),
-                    t1,
-                ),
+            cached_start = max(
+                cached_time for cached_time in t1_cache if cached_time < t1_key
             )
-            self._redfield_t1_cache[cache_key] = t1_states
+            time_step = 0.1
+            times = np.arange(
+                cached_start + time_step,
+                t1_key + time_step / 2,
+                time_step,
+            )
+            if times.size == 0 or not np.isclose(times[-1], t1_key):
+                times = np.append(times, t1_key)
+            times = np.insert(times, 0, cached_start)
+
+            cached_states = t1_cache[cached_start]
+            propagated_states = (
+                propagate(cached_states[0], times),
+                propagate(cached_states[1], times),
+            )
+            for time, state_a, state_b in zip(
+                times, propagated_states[0], propagated_states[1]
+            ):
+                t1_cache[round(float(time), 12)] = (state_a, state_b)
+            t1_states = t1_cache[t1_key]
 
         pathways = []
 
         rho_N_ESA = t1_states[0]
         rho_N_ESA = operation(rho_N_ESA, False, False, sequence[1] == 'X')
-        rho_N_ESA = propagate(rho_N_ESA, t2)
+        rho_N_ESA = propagate(rho_N_ESA, [0.0, t2])[-1]
         rho_N_ESA = operation(rho_N_ESA, True, True, sequence[2] == 'X')
-        rho_N_ESA = propagate(rho_N_ESA, t3)
+        rho_N_ESA = propagate(rho_N_ESA, [0.0, t3])[-1]
         pathways.append(rho_N_ESA)
 
         rho_R_ESA = t1_states[1]
         rho_R_ESA = operation(rho_R_ESA, True, True, sequence[1] == 'X')
-        rho_R_ESA = propagate(rho_R_ESA, t2)
+        rho_R_ESA = propagate(rho_R_ESA, [0.0, t2])[-1]
         rho_R_ESA = operation(rho_R_ESA, False, False, sequence[2] == 'X')
-        rho_R_ESA = propagate(rho_R_ESA, t3)
+        rho_R_ESA = propagate(rho_R_ESA, [0.0, t3])[-1]
         pathways.append(rho_R_ESA)
 
         rho_N_GSB = t1_states[0]
         rho_N_GSB = operation(rho_N_GSB, True, False, sequence[1] == 'X')
-        rho_N_GSB = propagate(rho_N_GSB, t2)
+        rho_N_GSB = propagate(rho_N_GSB, [0.0, t2])[-1]
         rho_N_GSB = operation(rho_N_GSB, True, True, sequence[2] == 'X')
-        rho_N_GSB = propagate(rho_N_GSB, t3)
+        rho_N_GSB = propagate(rho_N_GSB, [0.0, t3])[-1]
         pathways.append(rho_N_GSB)
 
         rho_R_GSB = t1_states[1]
         rho_R_GSB = operation(rho_R_GSB, False, True, sequence[1] == 'X')
-        rho_R_GSB = propagate(rho_R_GSB, t2)
+        rho_R_GSB = propagate(rho_R_GSB, [0.0, t2])[-1]
         rho_R_GSB = operation(rho_R_GSB, False, False, sequence[2] == 'X')
-        rho_R_GSB = propagate(rho_R_GSB, t3)
+        rho_R_GSB = propagate(rho_R_GSB, [0.0, t3])[-1]
         pathways.append(rho_R_GSB)
 
         rho_N_SE = t1_states[0]
         rho_N_SE = operation(rho_N_SE, False, False, sequence[1] == 'X')
-        rho_N_SE = propagate(rho_N_SE, t2)
+        rho_N_SE = propagate(rho_N_SE, [0.0, t2])[-1]
         rho_N_SE = operation(rho_N_SE, True, False, sequence[2] == 'X')
-        rho_N_SE = propagate(rho_N_SE, t3)
+        rho_N_SE = propagate(rho_N_SE, [0.0, t3])[-1]
         pathways.append(rho_N_SE)
 
         rho_R_SE = t1_states[1]
         rho_R_SE = operation(rho_R_SE, True, True, sequence[1] == 'X')
-        rho_R_SE = propagate(rho_R_SE, t2)
+        rho_R_SE = propagate(rho_R_SE, [0.0, t2])[-1]
         rho_R_SE = operation(rho_R_SE, False, True, sequence[2] == 'X')
-        rho_R_SE = propagate(rho_R_SE, t3)
+        rho_R_SE = propagate(rho_R_SE, [0.0, t3])[-1]
         pathways.append(rho_R_SE)
 
         rho_total = sum(pathways)
@@ -615,9 +646,9 @@ class Wheel:
     ):
         '''Compute a 2DES spectrum, evaluating time points in parallel.
 
-        ``n_processes`` controls the process-pool size. If omitted, one
-        process is created for each available CPU, capped by the number of
-        time points.
+        ``n_processes`` controls the process-pool size for non-Redfield
+        calculations. Redfield calculations run in one process so the
+        time-series cache can be shared by all ``t1`` points.
         '''
         dt1 = 0.1
         dt3 = 0.1
@@ -629,24 +660,36 @@ class Wheel:
             for i in range(T1.shape[0])
             for j in range(T1.shape[1])
         ]
-        if n_processes is None:
-            n_processes = min(cpu_count(), len(tasks))
-        if n_processes < 1:
+        if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
-        n_processes = min(n_processes, len(tasks))
-        print("Using {} processes for 2DES spectrum computation".format(n_processes))
-        chunksize = max(1, len(tasks) // (n_processes * 20))
-
         if redfield:
             self._redfield_t1_cache = {}
-        with Pool(
-            processes=n_processes,
-            initializer=_init_two_des_worker,
-            initargs=(self,),
-        ) as pool:
-            values = pool.map(
-                _two_des_point_worker, tasks, chunksize=chunksize
+            indexed_tasks = sorted(
+                enumerate(tasks),
+                key=lambda indexed_task: indexed_task[1][0],
+                reverse=True,
             )
+            values = [None] * len(tasks)
+            for index, task in indexed_tasks:
+                values[index] = self.two_des_spectrum_1pt_redfield(
+                    task[0], task[1], task[2], sequence=task[3]
+                )
+        else:
+            if n_processes is None:
+                n_processes = min(cpu_count(), len(tasks))
+            if n_processes < 1:
+                raise ValueError('n_processes must be positive')
+            n_processes = min(n_processes, len(tasks))
+            print("Using {} processes for 2DES spectrum computation".format(n_processes))
+            chunksize = max(1, len(tasks) // (n_processes * 20))
+            with Pool(
+                processes=n_processes,
+                initializer=_init_two_des_worker,
+                initargs=(self,),
+            ) as pool:
+                values = pool.map(
+                    _two_des_point_worker, tasks, chunksize=chunksize
+                )
         S = np.asarray(values, dtype=complex).reshape(T1.shape)
 
         # 2D Fourier transform
@@ -811,6 +854,7 @@ class Wheel:
         site_coupling=1.0,
         temperature=0.0,
         sec_cutoff=-1.0,
+        nsteps=1000000,
     ):
         '''Compute a linear-absorption point using Redfield propagation.
 
@@ -829,6 +873,10 @@ class Wheel:
             raise ValueError('cutoff must be positive')
         if temperature < 0:
             raise ValueError('temperature must be non-negative')
+        if nsteps < 1:
+            raise ValueError('nsteps must be positive')
+        if t < 0:
+            raise ValueError('t must be non-negative')
 
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
@@ -877,15 +925,54 @@ class Wheel:
 
             redfield_operators.append((coupling_operator, ohmic_spectrum))
 
-        if t != 0:
-            result = brmesolve(
-                ham_qobj,
-                Qobj(rho),
-                [0.0, t],
-                redfield_operators,
-                sec_cutoff=sec_cutoff,
-            )
-            rho = result.states[-1].full()
+        cache_key = (
+            bool(x),
+            float(eta),
+            float(cutoff),
+            float(site_coupling),
+            float(temperature),
+            float(sec_cutoff),
+            int(nsteps),
+        )
+        initial_rho = rho
+        time_cache = self._redfield_linear_absorption_cache.setdefault(
+            cache_key, {}
+        )
+        time_key = round(float(t), 12)
+        rho = time_cache.get(time_key)
+        if rho is None:
+            cached_start = max(
+                cached_time for cached_time in time_cache if cached_time < time_key
+            ) if time_cache else None
+            if cached_start is None:
+                cached_start = 0.0
+                time_cache[0.0] = initial_rho
+            if time_key != cached_start:
+                time_step = 0.1
+                times = np.arange(
+                    cached_start + time_step,
+                    time_key + time_step / 2,
+                    time_step,
+                )
+                if times.size == 0 or not np.isclose(times[-1], time_key):
+                    times = np.append(times, time_key)
+                times = np.insert(times, 0, cached_start)
+                result = brmesolve(
+                    ham_qobj,
+                    Qobj(time_cache[cached_start]),
+                    times,
+                    redfield_operators,
+                    sec_cutoff=sec_cutoff,
+                    options={'nsteps': nsteps},
+                )
+                for time, state in zip(times, result.states):
+                    time_cache[round(float(time), 12)] = state.full()
+                rho = time_cache[time_key]
+
+        if time_key == 0.0:
+            rho = time_cache.setdefault(0.0, initial_rho)
+        if rho is None:
+            rho = time_cache[time_key]
 
         return np.trace(td_op @ rho)
 
@@ -893,11 +980,14 @@ class Wheel:
         dt = 0.1
         t = np.arange(0, 30, dt)
         S = np.zeros_like(t, dtype=complex)
-        for i in range(t.shape[0]):
+        time_indices = (
+            np.argsort(t)[::-1] if redfield else range(t.shape[0])
+        )
+        for i in time_indices:
             if redfield:
-                S[i] += self.linear_absorption_1pt_redfield(t[i], x)
+                S[i] = self.linear_absorption_1pt_redfield(t[i], x)
             else:
-                S[i] += self.linear_absorption_1pt(t[i], x)
+                S[i] = self.linear_absorption_1pt(t[i], x)
         S_fft = np.fft.fftshift(np.fft.fft(S))
         omega = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(len(t), d=dt))
         return omega, S_fft
