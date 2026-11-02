@@ -360,10 +360,10 @@ if __name__ == '__main__':
     # fig_2()
     # fig_4()
     # finding_fig_5()
-    fig_5()
+    # fig_5()
     # fig_6()
     # test_2des()
-    #fig_7()
+    fig_7(redfield=True)
 
 
 
