@@ -55,7 +55,7 @@ os.makedirs(FIGURES_DIR, exist_ok=True)
 FIG4_CACHE_DIR = os.path.join(FIGURES_DIR, 'fig4_cache')
 os.makedirs(FIG4_CACHE_DIR, exist_ok=True)
 
-K_s = 1.0
+K_s = 1.0 # 1.0 = 100 inverse cm, 2.0 = 200 inverse cm, etc. This is the energy scale of the Hamiltonian.
 NEW_J_CONDITION = True
 J_SQUARED_THRESHOLD = 0.3
 
@@ -240,9 +240,10 @@ class Wheel:
             binary += (1 if (i + 1, (i + 1) % self.n + 1) in self.active_edges else 0)
         return binary
 
-    def construct_hamiltonian(self, epsilon=1.0):
+    def construct_hamiltonian(self, epsilon=150.0):
         '''Construct the Hamiltonian matrix for the wheel graph.
         Values are zero for inactive edges and J for active edges. edge = row i, col j if i and j are connected. 
+        We use epsilon = 150 because J = 1 being 100 inverse cm and epsilon being 15000 is somewhat realistic for a molecular system. The diagonal is set to epsilon.
         '''
         matrix = np.zeros((self.n + 1, self.n + 1), dtype='float64')  # initialize Hamiltonian matrix
 
@@ -254,7 +255,7 @@ class Wheel:
 
         return matrix
 
-    def compute_eigen(self, epsilon=1.0):
+    def compute_eigen(self, epsilon=150.0):
         '''Compute the eigenvalues and eigenvectors of the Hamiltonian matrix for the wheel graph.'''
         H = self.construct_hamiltonian(epsilon)
         eigenvalues, eigenvectors = np.linalg.eigh(H)
@@ -288,7 +289,7 @@ class Wheel:
         # print('Lowering y:', td_op_lowering_y)
 
         
-        def operation(rho, left, raising, x):
+        def operation_naive(rho, left, raising, x):
             if left:
                 if raising:
                     return td_op_raising_x @ rho if x else td_op_raising_y @ rho
@@ -299,6 +300,9 @@ class Wheel:
                     return rho @ td_op_raising_x if x else rho @ td_op_raising_y
                 else: 
                     return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
+
+        def operation(rho, left, raising, x):
+            return operation_naive(rho, left, raising, x) - operation_naive(rho, not left, raising, x)
 
         U_1 = expm(-1j * t1 * ham)
         U_2 = expm(-1j * t2 * ham)
@@ -408,9 +412,9 @@ class Wheel:
         t3,
         sequence='XXXX',
         eta=0.01,
-        cutoff=10.0,
+        cutoff=2.0,
         site_coupling=1.0,
-        temperature=0.0,
+        temperature=2.0,
         sec_cutoff=-1.0,
     ):
         '''Compute a 2DES point using non-secular Redfield propagation.
@@ -425,13 +429,16 @@ class Wheel:
         eta : float, optional
             Dimensionless Ohmic bath coupling strength. Defaults to ``0.01``.
         cutoff : float, optional
-            Ohmic bath cutoff frequency. Defaults to ``10.0``.
+            Ohmic bath cutoff frequency. Defaults to ``2.0``.
         site_coupling : float, optional
             Amplitude of each site's energy-fluctuation operator. Defaults to
             ``1.0``.
         temperature : float, optional
             Bath temperature in the same energy units as the Hamiltonian, with
-            Boltzmann's constant set to one. Defaults to ``0.0``.
+            Boltzmann's constant set to one. Defaults to ``2.0``.
+            2.0 is because the energy scale of the Hamiltonian is ~100 inverse cm,
+            and 2.0 corresponds to 300K, which is a reasonable temperature for
+            a typical 2DES reading.
         sec_cutoff : float, optional
             QuTiP Redfield secular cutoff. A negative value disables the
             secular approximation; the default is ``-1.0``.
@@ -518,7 +525,7 @@ class Wheel:
             )
             return result.states[-1].full()
 
-        def operation(rho, left, raising, x):
+        def operation_naive(rho, left, raising, x):
             if left:
                 if raising:
                     return td_op_raising_x @ rho if x else td_op_raising_y @ rho
@@ -526,6 +533,11 @@ class Wheel:
             if raising:
                 return rho @ td_op_raising_x if x else rho @ td_op_raising_y
             return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
+
+        def operation(rho, left, raising, x):
+            return operation_naive(rho, left, raising, x) - operation_naive(
+                rho, not left, raising, x
+            )
 
         cache_key = (
             float(t1),
@@ -656,6 +668,17 @@ class Wheel:
         return omega1, omega3, S_fft
 
     def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, redfield=False, n_processes=None):
+        '''Plot the 2DES spectrum.
+
+        The Hamiltonian and time variables use units where ``K_s = 1`` and
+        ``hbar = 1``.  Since ``K_s`` represents ``100 cm^-1`` in this model,
+        the angular frequencies returned by :meth:`two_des_spectrum` and
+        plotted here are normalized by ``K_s``: a plotted value of
+        ``omega = 1`` corresponds to ``100 cm^-1`` (and ``omega = 0.01``
+        corresponds to ``1 cm^-1``).  The factor of ``2*pi`` in the FFT
+        converts the FFT's cycles-per-time frequencies to angular
+        frequencies, consistent with the Hamiltonian evolution convention.
+        '''
         omega1, omega3, S = self.two_des_spectrum(t2, redfield=redfield, n_processes=n_processes)
 
         zoom_factor = float(zoom_factor)
