@@ -267,7 +267,7 @@ def fig_5():
             grid = fig_square.SquareWheelGrid(5, 5, angles=angles)
             grid.render_grid(ax, True, node_size=50)
             ax.set_title(f'Angles: {[round(x / DEG) for x in angles]}, $\\rho_\\chi = {grid.euler_characteristic_density():.2f}$', fontsize=8)
-            ax.axis('off')
+            # ax.axis('off')
     a, b, c = [fig.add_subplot(gs[0, i]) for i in range(3)]
     for i in [a, b, c]:
         i.axis('off')
@@ -308,7 +308,7 @@ def fig_6():
     eig_fig.set_ylabel("Multiplicity")
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
-def fig_7():
+def fig_7(redfield=False):
     fig = plt.figure(layout = "constrained", figsize=(12, 9))
     gs = fig.add_gridspec(3,4)
     fig_w1 = fig.add_subplot(gs[0,0])
@@ -339,18 +339,21 @@ def fig_7():
     print('Plotting linear absorption...')
     for ax, w in zip([w1_spec, w2_spec, w3_spec], [w1, w2, w3]):
         print(f'Plotting linear absorption for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_linear_absorption(ax, zoom_factor = 0.2, redfield=True)
+        w.plot_linear_absorption(ax, zoom_factor = 0.2, redfield=redfield)
     print('Plotting 2DES spectra...')
     for ax, w in zip([w1_2des, w2_2des, w3_2des], [w1, w2, w3]):
         print(f'Plotting 2DES spectra for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des(ax, zoom_factor = 0.3, log=False, redfield=True)
+        w.plot_2des(ax, zoom_factor = 0.3, log=False, redfield=redfield)
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotropy(ax, zoom_factor = 0.3, redfield=True)
-    plt.savefig(os.path.join(FIGURES_DIR, 'fig_7_redfield.png'), dpi=300)
+        w.plot_2des_anisotropy(ax, zoom_factor = 0.3, redfield=redfield)
+    plt.savefig(os.path.join(FIGURES_DIR, f'fig_7{'' if not redfield else '_redfield'}.png'), dpi=300)
 
-
+def test_2des():
+    w = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
+    w.plot_2des(plt.gca(), log=False, redfield=True)
+    plt.savefig(os.path.join(FIGURES_DIR, f'test_2des.png'), dpi=300)
 
 if __name__ == '__main__':
     # fig_1()
@@ -359,7 +362,8 @@ if __name__ == '__main__':
     # finding_fig_5()
     fig_5()
     # fig_6()
-    # fig_7()
+    # test_2des()
+    #fig_7()
 
 
 
