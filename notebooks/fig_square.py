@@ -945,62 +945,91 @@ class Wheel:
 
             eta = 0.01
             cutoff = 2.0
-            site_coupling = 2.0
-            temperature = 1.0
+            site_coupling = 1.0
+            temperature = 2.0
             sec_cutoff = -1.0
             nsteps = 1000000
             ham = self.construct_hamiltonian()
 
+            # Rotating frame
             omega_ref = 150.0
             ham -= omega_ref * np.eye(self.n + 1)
 
-            ham = np.vstack((np.zeros((1, self.n + 1)), ham))
-            ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+            ham = np.vstack((
+                np.zeros((1, self.n + 1)), ham
+            ))
+            ham = np.hstack((
+                np.zeros((self.n + 2, 1)), ham
+            ))
             ham_qobj = Qobj(ham)
 
-            td_op = np.array(
-                [0, np.cos(self.center_angle)]
+            # Transition dipoles for the selected polarization
+            dipoles = np.array(
+                [np.cos(self.center_angle)]
                 + [np.cos(angle) for angle in self.spoke_angles]
-                if x
-                else [0, np.sin(self.center_angle)]
+                if x else
+                [np.sin(self.center_angle)]
                 + [np.sin(angle) for angle in self.spoke_angles],
                 dtype=complex,
             )
-            td_op = np.vstack((
-                td_op,
-                np.zeros((self.n + 1, self.n + 2), dtype=complex),
-            ))
-            td_op += td_op.T
-            rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
-            rho_0[0, 0] = 1.0
-            rho_after_pulse = -1j * (td_op @ rho_0 - rho_0 @ td_op)
 
+            # Raising and lowering operators
+            raising = np.zeros(
+                (self.n + 2, self.n + 2), dtype=complex
+            )
+            raising[1:, 0] = dipoles
+            lowering = raising.conj().T
+
+            rho_0 = np.zeros(
+                (self.n + 2, self.n + 2), dtype=complex
+            )
+            rho_0[0, 0] = 1.0
+
+            # Only the absorption coherence
+            rho_after_pulse = raising @ rho_0
+
+            # Redfield bath operators
             redfield_operators = []
             for site in range(1, self.n + 2):
-                coupling_operator = np.zeros_like(ham, dtype=complex)
+                coupling_operator = np.zeros_like(
+                    ham, dtype=complex
+                )
                 coupling_operator[site, site] = site_coupling
 
                 def ohmic_spectrum(omega):
                     omega = float(omega)
                     frequency = abs(omega)
+
                     if frequency == 0.0:
                         return 0.0
+
                     spectral_density = (
                         2.0 * np.pi * eta * frequency
                         * np.exp(-frequency / cutoff)
                     )
+
                     if temperature == 0.0:
-                        return spectral_density if omega > 0.0 else 0.0
-                    occupation = 1.0 / np.expm1(frequency / temperature)
+                        return (
+                            spectral_density
+                            if omega > 0.0 else 0.0
+                        )
+
+                    occupation = (
+                        1.0 / np.expm1(frequency / temperature)
+                    )
+
                     return spectral_density * (
-                        occupation + 1.0 if omega > 0.0 else occupation
+                        occupation + 1.0
+                        if omega > 0.0 else occupation
                     )
 
                 redfield_operators.append(
                     (Qobj(coupling_operator), ohmic_spectrum)
                 )
 
+            # Propagate once and collect all snapshots
             solver_times = np.append(t, 30.0)
+
             result = brmesolve(
                 ham_qobj,
                 Qobj(rho_after_pulse),
@@ -1009,15 +1038,38 @@ class Wheel:
                 sec_cutoff=sec_cutoff,
                 options={'nsteps': nsteps},
             )
+
+            # Dipole correlation function
             S = np.asarray([
-                np.trace(td_op @ state.full())
+                np.trace(lowering @ state.full())
                 for state in result.states[:t.size]
             ])
+
         else:
+            # Original non-Redfield calculation
             for i in range(t.shape[0]):
                 S[i] = self.linear_absorption_1pt(t[i], x)
-        S_fft = np.fft.fftshift(np.fft.fft(S))
-        omega = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(len(t), d=dt))
+
+        # Suppress finite-time truncation artifacts
+        gamma_window = 0.05
+        S = S * np.exp(-gamma_window * t)
+
+        # Fourier transform with positive excitation-frequency convention
+        padding_factor = 16
+        n_fft = len(t) * padding_factor
+
+        S_fft = dt * np.fft.fftshift(
+            np.fft.fft(np.conj(S), n=n_fft)
+        )
+
+        omega = 2 * np.pi * np.fft.fftshift(
+            np.fft.fftfreq(n_fft, d=dt)
+        )
+
+        # Restore absolute optical frequencies for Redfield mode
+        if redfield:
+            omega += 150.0
+
         return omega, S_fft
 
     def plot_linear_absorption(
@@ -1038,8 +1090,13 @@ class Wheel:
         omega = omega[start:end]
         S = S[start:end]
 
-        ax.plot(omega, np.imag(S), color='tab:blue', lw=1.6)
-        ax.fill_between(omega, 0.0, np.abs(S), color='tab:blue', alpha=0.25)
+        absorption = np.real(S)
+
+        ax.plot(omega, absorption, color='tab:blue', lw=1.6)
+        ax.fill_between(
+            omega, 0, absorption,
+            color='tab:blue', alpha=0.25
+        )
         ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
         ax.set_ylabel('Linear absorption', fontsize=9)
         ax.set_title('Linear Absorption Spectrum', fontsize=9)
