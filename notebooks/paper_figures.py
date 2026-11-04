@@ -352,7 +352,7 @@ def fig_7(redfield=False):
 
 def test_2des():
     w = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
-    w.plot_2des(plt.gca(), log=False, redfield=True)
+    w.plot_2des(plt.gca(), zoom_factor = 0.3, log=False, redfield=True)
     plt.savefig(os.path.join(FIGURES_DIR, f'test_2des.png'), dpi=300)
 
 if __name__ == '__main__':
