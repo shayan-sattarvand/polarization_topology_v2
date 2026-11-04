@@ -727,19 +727,27 @@ class Wheel:
             raise ValueError('n_processes must be positive')
         if redfield:
             t1_states = self.generate_t1_states(t1, sequence=sequence)
-            row_args = [
-                (state_after_t1, t2, t3, sequence)
-                for state_after_t1 in t1_states
-            ]
-            if n_processes is None:
-                n_processes = min(cpu_count(), len(row_args))
-            n_processes = min(n_processes, len(row_args))
-            with ThreadPoolExecutor(max_workers=n_processes) as executor:
-                rows = executor.map(
-                    lambda args: self.two_des_spectrum_1row_redfield(*args),
-                    row_args,
+            # We removed concurrency because it was causing issues with the QuTiP solver. The code below is the original implementation that used ThreadPoolExecutor to compute rows in parallel, but it has been commented out.
+            # row_args = [
+            #     (state_after_t1, t2, t3, sequence)
+            #     for state_after_t1 in t1_states
+            # ]
+            # if n_processes is None:
+            #     n_processes = min(cpu_count(), len(row_args))
+            # n_processes = min(n_processes, len(row_args))
+            # with ThreadPoolExecutor(max_workers=n_processes) as executor:
+            #     rows = executor.map(
+            #         lambda args: self.two_des_spectrum_1row_redfield(*args),
+            #         row_args,
+            #     )
+            #     S = np.asarray(list(rows), dtype=complex).T
+            S = []
+            for state_after_t1 in t1_states:
+                row = self.two_des_spectrum_1row_redfield(
+                    state_after_t1, t2, t3, sequence=sequence
                 )
-                S = np.asarray(list(rows), dtype=complex).T
+                S.append(row)
+            S = np.asarray(S, dtype=complex).T
         else:
             T1, T3 = np.meshgrid(t1, t3)
             tasks = [
