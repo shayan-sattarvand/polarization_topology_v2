@@ -117,7 +117,6 @@ class Wheel:
         ])
         self.spoke_angles = angles.copy()
         self.center_angle = self.spoke_angles.pop(0) # remove the first angle, which is for the center node
-        self._redfield_linear_absorption_cache = {}
         active_edges = []
         all_edges = []
         for i in range(self.n): # between center and spokes
@@ -931,148 +930,87 @@ class Wheel:
 
         return np.trace(td_op @ rho)
 
-    def linear_absorption_1pt_redfield(
-        self,
-        t,
-        x=True,
-        eta=0.01,
-        cutoff=10.0,
-        site_coupling=1.0,
-        temperature=0.0,
-        sec_cutoff=-1.0,
-        nsteps=1000000,
-    ):
-        '''Compute a linear-absorption point using Redfield propagation.
-
-        The bath parameters have the same defaults and meaning as in
-        :meth:`two_des_spectrum_1row_redfield`.
-        '''
-        try:
-            from qutip import Qobj, brmesolve
-        except ImportError as exc:
-            raise ImportError(
-                'linear_absorption_1pt_redfield requires the qutip package'
-            ) from exc
-        if eta < 0:
-            raise ValueError('eta must be non-negative')
-        if cutoff <= 0:
-            raise ValueError('cutoff must be positive')
-        if temperature < 0:
-            raise ValueError('temperature must be non-negative')
-        if nsteps < 1:
-            raise ValueError('nsteps must be positive')
-        if t < 0:
-            raise ValueError('t must be non-negative')
-
-        ham = self.construct_hamiltonian()
-        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
-        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
-        ham_qobj = Qobj(ham)
-
-        rho = np.zeros((self.n + 2, self.n + 2), dtype=complex)
-        rho[0, 0] = 1.0
-        if x:
-            td_op = [0, np.cos(self.center_angle)] + [
-                np.cos(angle) for angle in self.spoke_angles
-            ]
-        else:
-            td_op = [0, np.sin(self.center_angle)] + [
-                np.sin(angle) for angle in self.spoke_angles
-            ]
-        td_op = np.array(td_op, dtype=complex)
-        td_op = np.vstack((
-            td_op,
-            np.zeros((self.n + 1, self.n + 2), dtype=complex),
-        ))
-        td_op += td_op.T
-        rho = -1j * (td_op @ rho - rho @ td_op)
-
-        redfield_operators = []
-        for site in range(1, self.n + 2):
-            coupling_operator = np.zeros_like(ham, dtype=complex)
-            coupling_operator[site, site] = site_coupling
-            coupling_operator = Qobj(coupling_operator)
-
-            def ohmic_spectrum(omega):
-                omega = float(omega)
-                frequency = abs(omega)
-                if frequency == 0.0:
-                    return 0.0
-                spectral_density = (
-                    2.0 * np.pi * eta * frequency
-                    * np.exp(-frequency / cutoff)
-                )
-                if temperature == 0.0:
-                    return spectral_density if omega > 0.0 else 0.0
-                occupation = 1.0 / np.expm1(frequency / temperature)
-                return spectral_density * (
-                    occupation + 1.0 if omega > 0.0 else occupation
-                )
-
-            redfield_operators.append((coupling_operator, ohmic_spectrum))
-
-        cache_key = (
-            bool(x),
-            float(eta),
-            float(cutoff),
-            float(site_coupling),
-            float(temperature),
-            float(sec_cutoff),
-            int(nsteps),
-        )
-        initial_rho = rho
-        time_cache = self._redfield_linear_absorption_cache.setdefault(
-            cache_key, {}
-        )
-        time_key = round(float(t), 12)
-        rho = time_cache.get(time_key)
-        if rho is None:
-            cached_start = max(
-                cached_time for cached_time in time_cache if cached_time < time_key
-            ) if time_cache else None
-            if cached_start is None:
-                cached_start = 0.0
-                time_cache[0.0] = initial_rho
-            if time_key != cached_start:
-                time_step = 0.1
-                times = np.arange(
-                    cached_start + time_step,
-                    time_key + time_step / 2,
-                    time_step,
-                )
-                if times.size == 0 or not np.isclose(times[-1], time_key):
-                    times = np.append(times, time_key)
-                times = np.insert(times, 0, cached_start)
-                result = brmesolve(
-                    ham_qobj,
-                    Qobj(time_cache[cached_start]),
-                    times,
-                    redfield_operators,
-                    sec_cutoff=sec_cutoff,
-                    options={'nsteps': nsteps},
-                )
-                for time, state in zip(times, result.states):
-                    time_cache[round(float(time), 12)] = state.full()
-                rho = time_cache[time_key]
-
-        if time_key == 0.0:
-            rho = time_cache.setdefault(0.0, initial_rho)
-        if rho is None:
-            rho = time_cache[time_key]
-
-        return np.trace(td_op @ rho)
-
     def linear_absorption_spectrum(self, x=True, redfield=False):
         dt = 0.1
         t = np.arange(0, 30, dt)
         S = np.zeros_like(t, dtype=complex)
-        time_indices = (
-            np.argsort(t)[::-1] if redfield else range(t.shape[0])
-        )
-        for i in time_indices:
-            if redfield:
-                S[i] = self.linear_absorption_1pt_redfield(t[i], x)
-            else:
+        if redfield:
+            try:
+                from qutip import Qobj, brmesolve
+            except ImportError as exc:
+                raise ImportError(
+                    'linear_absorption_spectrum requires the qutip package '
+                    'when redfield=True'
+                ) from exc
+
+            eta = 0.01
+            cutoff = 10.0
+            site_coupling = 1.0
+            temperature = 0.0
+            sec_cutoff = -1.0
+            nsteps = 1000000
+            ham = self.construct_hamiltonian()
+            ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+            ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+            ham_qobj = Qobj(ham)
+
+            td_op = np.array(
+                [0, np.cos(self.center_angle)]
+                + [np.cos(angle) for angle in self.spoke_angles]
+                if x
+                else [0, np.sin(self.center_angle)]
+                + [np.sin(angle) for angle in self.spoke_angles],
+                dtype=complex,
+            )
+            td_op = np.vstack((
+                td_op,
+                np.zeros((self.n + 1, self.n + 2), dtype=complex),
+            ))
+            td_op += td_op.T
+            rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+            rho_0[0, 0] = 1.0
+            rho_after_pulse = -1j * (td_op @ rho_0 - rho_0 @ td_op)
+
+            redfield_operators = []
+            for site in range(1, self.n + 2):
+                coupling_operator = np.zeros_like(ham, dtype=complex)
+                coupling_operator[site, site] = site_coupling
+
+                def ohmic_spectrum(omega):
+                    omega = float(omega)
+                    frequency = abs(omega)
+                    if frequency == 0.0:
+                        return 0.0
+                    spectral_density = (
+                        2.0 * np.pi * eta * frequency
+                        * np.exp(-frequency / cutoff)
+                    )
+                    if temperature == 0.0:
+                        return spectral_density if omega > 0.0 else 0.0
+                    occupation = 1.0 / np.expm1(frequency / temperature)
+                    return spectral_density * (
+                        occupation + 1.0 if omega > 0.0 else occupation
+                    )
+
+                redfield_operators.append(
+                    (Qobj(coupling_operator), ohmic_spectrum)
+                )
+
+            solver_times = np.append(t, 30.0)
+            result = brmesolve(
+                ham_qobj,
+                Qobj(rho_after_pulse),
+                solver_times,
+                redfield_operators,
+                sec_cutoff=sec_cutoff,
+                options={'nsteps': nsteps},
+            )
+            S = np.asarray([
+                np.trace(td_op @ state.full())
+                for state in result.states[:t.size]
+            ])
+        else:
+            for i in range(t.shape[0]):
                 S[i] = self.linear_absorption_1pt(t[i], x)
         S_fft = np.fft.fftshift(np.fft.fft(S))
         omega = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(len(t), d=dt))
