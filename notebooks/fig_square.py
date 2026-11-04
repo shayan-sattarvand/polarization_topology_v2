@@ -469,6 +469,10 @@ class Wheel:
         solver_times = np.unique(np.concatenate(([0.0], t3_values)))
 
         ham = self.construct_hamiltonian()
+
+        omega_ref = 150.0 # Shift into rotating frame so we don't have to make dt absolutely tiny. 
+        ham -= omega_ref * np.eye(self.n + 1) # All this does is reduce frequencies so we don't hit the Nyquist limit with our dt of 0.1. 
+
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
         ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
         ham_qobj = Qobj(ham)
@@ -643,11 +647,6 @@ class Wheel:
         t1 = np.arange(0, 25, dt1)
         t3 = np.arange(0, 25, dt3)
         T1, T3 = np.meshgrid(t1, t3)
-        tasks = [
-            (T1[i, j], t2, T3[i, j], sequence, redfield)
-            for i in range(T1.shape[0])
-            for j in range(T1.shape[1])
-        ]
         if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
         if redfield:
@@ -661,6 +660,11 @@ class Wheel:
                     sequence=sequence,
                 )
         else:
+            tasks = [
+                        (T1[i, j], t2, T3[i, j], sequence, redfield)
+                        for i in range(T1.shape[0])
+                        for j in range(T1.shape[1])
+                    ]
             if n_processes is None:
                 n_processes = min(cpu_count(), len(tasks))
             if n_processes < 1:
@@ -696,6 +700,12 @@ class Wheel:
         omega3 = 2 * np.pi * np.fft.fftshift(
             np.fft.fftfreq(len(t3), d=dt3)
         )
+
+        # Restore absolute optical frequencies
+        omega_ref = 150.0
+
+        omega1 -= omega_ref
+        omega3 += omega_ref
 
         return omega1, omega3, S_fft
 
