@@ -944,9 +944,9 @@ class Wheel:
                 ) from exc
 
             eta = 0.01
-            cutoff = 10.0
-            site_coupling = 1.0
-            temperature = 0.0
+            cutoff = 2.0
+            site_coupling = 2.0
+            temperature = 1.0
             sec_cutoff = -1.0
             nsteps = 1000000
             ham = self.construct_hamiltonian()
@@ -1038,7 +1038,7 @@ class Wheel:
         omega = omega[start:end]
         S = S[start:end]
 
-        ax.plot(omega, np.abs(S), color='tab:blue', lw=1.6)
+        ax.plot(omega, np.imag(S), color='tab:blue', lw=1.6)
         ax.fill_between(omega, 0.0, np.abs(S), color='tab:blue', alpha=0.25)
         ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
         ax.set_ylabel('Linear absorption', fontsize=9)
