@@ -950,6 +950,10 @@ class Wheel:
             sec_cutoff = -1.0
             nsteps = 1000000
             ham = self.construct_hamiltonian()
+
+            omega_ref = 150.0
+            ham -= omega_ref * np.eye(self.n + 1)
+
             ham = np.vstack((np.zeros((1, self.n + 1)), ham))
             ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
             ham_qobj = Qobj(ham)
