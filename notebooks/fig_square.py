@@ -3,6 +3,7 @@ import os
 import json
 import math
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool, cpu_count
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -64,7 +65,6 @@ _TWO_DES_WORKER_WHEEL = None
 
 def _init_two_des_worker(wheel):
     global _TWO_DES_WORKER_WHEEL
-    wheel._redfield_t1_cache = {}
     _TWO_DES_WORKER_WHEEL = wheel
 
 
@@ -117,7 +117,6 @@ class Wheel:
         ])
         self.spoke_angles = angles.copy()
         self.center_angle = self.spoke_angles.pop(0) # remove the first angle, which is for the center node
-        self._redfield_t1_cache = {}
         self._redfield_linear_absorption_cache = {}
         active_edges = []
         all_edges = []
@@ -402,9 +401,129 @@ class Wheel:
         # # The signal
         # return np.trace(td_op @ rho_S_N_ESA)
 
+    def generate_t1_states(
+        self,
+        t1_values,
+        sequence='XXXX',
+        eta=0.01,
+        cutoff=2.0,
+        site_coupling=1.0,
+        temperature=2.0,
+        sec_cutoff=-1.0,
+        nsteps=1000000,
+    ):
+        '''Generate both post-pulse states for every requested ``t1`` value.'''
+        try:
+            from qutip import Qobj, brmesolve
+        except ImportError as exc:
+            raise ImportError(
+                'generate_t1_states requires the qutip package'
+            ) from exc
+        if eta < 0:
+            raise ValueError('eta must be non-negative')
+        if cutoff <= 0:
+            raise ValueError('cutoff must be positive')
+        if temperature < 0:
+            raise ValueError('temperature must be non-negative')
+        if nsteps < 1:
+            raise ValueError('nsteps must be positive')
+        t1_values = np.asarray(t1_values, dtype=float)
+        if t1_values.ndim != 1:
+            raise ValueError('t1_values must be one-dimensional')
+        if np.any(t1_values < 0):
+            raise ValueError('t1_values must be non-negative')
+        if t1_values.size == 0:
+            return np.empty((0, 2, self.n + 2, self.n + 2), dtype=complex)
+        if np.any(np.diff(t1_values) < 0):
+            raise ValueError('t1_values must be sorted in ascending order')
+        solver_times = np.unique(np.concatenate(([0.0], t1_values)))
+
+        ham = self.construct_hamiltonian()
+        ham -= 150.0 * np.eye(self.n + 1)
+        ham = np.vstack((np.zeros((1, self.n + 1)), ham))
+        ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
+        ham_qobj = Qobj(ham)
+
+        td_op_x = np.array(
+            [0, np.cos(self.center_angle)]
+            + [np.cos(angle) for angle in self.spoke_angles],
+            dtype=complex,
+        )
+        td_op_x = np.vstack((
+            td_op_x,
+            np.zeros((self.n + 1, self.n + 2), dtype=complex),
+        ))
+        td_op_y = np.array(
+            [0, np.sin(self.center_angle)]
+            + [np.sin(angle) for angle in self.spoke_angles],
+            dtype=complex,
+        )
+        td_op_y = np.vstack((
+            td_op_y,
+            np.zeros((self.n + 1, self.n + 2), dtype=complex),
+        ))
+        lowering = td_op_x if sequence[0] == 'X' else td_op_y
+        raising = lowering.T
+        rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
+        rho_0[0, 0] = 1.0
+        initial_states = (
+            raising @ rho_0 - rho_0 @ raising,
+            rho_0 @ lowering - lowering @ rho_0,
+        )
+
+        redfield_operators = []
+        for site in range(1, self.n + 2):
+            coupling_operator = np.zeros_like(ham, dtype=complex)
+            coupling_operator[site, site] = site_coupling
+
+            def ohmic_spectrum(omega):
+                omega = float(omega)
+                frequency = abs(omega)
+                if frequency == 0.0:
+                    return 0.0
+                spectral_density = (
+                    2.0 * np.pi * eta * frequency
+                    * np.exp(-frequency / cutoff)
+                )
+                if temperature == 0.0:
+                    return spectral_density if omega > 0.0 else 0.0
+                occupation = 1.0 / np.expm1(frequency / temperature)
+                return spectral_density * (
+                    occupation + 1.0 if omega > 0.0 else occupation
+                )
+
+            redfield_operators.append((Qobj(coupling_operator), ohmic_spectrum))
+
+        def propagate(rho):
+            if solver_times[-1] == 0.0:
+                return [rho.copy()]
+            result = brmesolve(
+                ham_qobj,
+                Qobj(rho),
+                solver_times,
+                redfield_operators,
+                sec_cutoff=sec_cutoff,
+                options={'nsteps': nsteps},
+            )
+            states_by_time = {
+                round(float(time), 12): state.full()
+                for time, state in zip(solver_times, result.states)
+            }
+            return [
+                states_by_time[round(float(time), 12)]
+                for time in t1_values
+            ]
+
+        states_a = propagate(initial_states[0])
+        states_b = propagate(initial_states[1])
+        return np.asarray(
+            list(zip(states_a, states_b)),
+            dtype=complex,
+        )
+
     def two_des_spectrum_1row_redfield(
         self,
-        t1,
+        state_after_t1,
         t2,
         t3_values,
         sequence='XXXX',
@@ -417,11 +536,11 @@ class Wheel:
     ):
         '''Compute one 2DES row using non-secular Redfield propagation.
 
-        ``t3_values`` contains all detection times for one ``t1`` value.
+        ``state_after_t1`` contains the two post-pulse states for one ``t1``.
+        ``t3_values`` contains all detection times for that row.
         Each pathway is propagated through the complete ``t3_values`` grid,
         so the row is returned with one solver pass per pathway rather than
-        one solver pass per 2DES point.  The ``t1`` states are shared with
-        other rows through the Redfield cache.
+        one solver pass per 2DES point.
 
         Parameters
         ----------
@@ -459,8 +578,11 @@ class Wheel:
             raise ValueError('temperature must be non-negative')
         if nsteps < 1:
             raise ValueError('nsteps must be positive')
-        if t1 < 0:
-            raise ValueError('t1 must be non-negative')
+        state_after_t1 = np.asarray(state_after_t1, dtype=complex)
+        if state_after_t1.shape != (2, self.n + 2, self.n + 2):
+            raise ValueError(
+                'state_after_t1 must have shape (2, n + 2, n + 2)'
+            )
         t3_values = np.asarray(t3_values, dtype=float)
         if t3_values.ndim != 1:
             raise ValueError('t3_values must be one-dimensional')
@@ -477,8 +599,6 @@ class Wheel:
         ham = np.hstack((np.zeros((self.n + 2, 1)), ham))
         ham_qobj = Qobj(ham)
 
-        rho_0 = np.zeros((self.n + 2, self.n + 2), dtype=complex)
-        rho_0[0, 0] = 1.0
         td_op_x = [0, np.cos(self.center_angle)] + [
             np.cos(angle) for angle in self.spoke_angles
         ]
@@ -557,57 +677,14 @@ class Wheel:
                 rho, not left, raising, x
             )
 
-        cache_key = (
-            sequence,
-            float(eta),
-            float(cutoff),
-            float(site_coupling),
-            float(temperature),
-            float(sec_cutoff),
-            int(nsteps),
-        )
-        t1_cache = self._redfield_t1_cache.setdefault(cache_key, {})
-        initial_states = (
-            operation(rho_0.copy(), True, True, sequence[0] == 'X'),
-            operation(rho_0.copy(), False, False, sequence[0] == 'X'),
-        )
-        t1_cache.setdefault(0.0, initial_states)
-
-        t1_key = round(float(t1), 12)
-        t1_states = t1_cache.get(t1_key)
-        if t1_states is None:
-            cached_start = max(
-                cached_time for cached_time in t1_cache if cached_time < t1_key
-            )
-            time_step = 0.1
-            times = np.arange(
-                cached_start + time_step,
-                t1_key + time_step / 2,
-                time_step,
-            )
-            if times.size == 0 or not np.isclose(times[-1], t1_key):
-                times = np.append(times, t1_key)
-            times = np.insert(times, 0, cached_start)
-
-            cached_states = t1_cache[cached_start]
-            propagated_states = (
-                propagate(cached_states[0], times),
-                propagate(cached_states[1], times),
-            )
-            for time, state_a, state_b in zip(
-                times, propagated_states[0], propagated_states[1]
-            ):
-                t1_cache[round(float(time), 12)] = (state_a, state_b)
-            t1_states = t1_cache[t1_key]
-
         signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
         pathway_specs = (
-            (t1_states[0], False, False, True, True),
-            (t1_states[1], True, True, False, False),
-            (t1_states[0], True, False, True, True),
-            (t1_states[1], False, True, False, False),
-            (t1_states[0], False, False, True, False),
-            (t1_states[1], True, True, False, True),
+            (state_after_t1[0], False, False, True, True),
+            (state_after_t1[1], True, True, False, False),
+            (state_after_t1[0], True, False, True, True),
+            (state_after_t1[1], False, True, False, False),
+            (state_after_t1[0], False, False, True, False),
+            (state_after_t1[1], True, True, False, True),
         )
         pathways = []
         for rho, left_t2, raising_t2, left_t3, raising_t3 in pathway_specs:
@@ -638,33 +715,38 @@ class Wheel:
     ):
         '''Compute a 2DES spectrum, evaluating time points in parallel.
 
-        ``n_processes`` controls the process-pool size for non-Redfield
-        calculations. Redfield calculations run in one process so the
-        time-series cache can be shared by all ``t1`` points.
+        ``n_processes`` controls the process-pool size for both calculation
+        modes. Redfield rows are evaluated concurrently after all ``t1``
+        states have been generated.
         '''
         dt1 = 0.1
         dt3 = 0.1
         t1 = np.arange(0, 25, dt1)
         t3 = np.arange(0, 25, dt3)
-        T1, T3 = np.meshgrid(t1, t3)
         if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
         if redfield:
-            self._redfield_t1_cache = {}
-            values = np.empty(T1.shape, dtype=complex)
-            for column in range(t1.size - 1, -1, -1):
-                values[:, column] = self.two_des_spectrum_1row_redfield(
-                    t1[column],
-                    t2,
-                    t3,
-                    sequence=sequence,
+            t1_states = self.generate_t1_states(t1, sequence=sequence)
+            row_args = [
+                (state_after_t1, t2, t3, sequence)
+                for state_after_t1 in t1_states
+            ]
+            if n_processes is None:
+                n_processes = min(cpu_count(), len(row_args))
+            n_processes = min(n_processes, len(row_args))
+            with ThreadPoolExecutor(max_workers=n_processes) as executor:
+                rows = executor.map(
+                    lambda args: self.two_des_spectrum_1row_redfield(*args),
+                    row_args,
                 )
+                S = np.asarray(list(rows), dtype=complex).T
         else:
+            T1, T3 = np.meshgrid(t1, t3)
             tasks = [
-                        (T1[i, j], t2, T3[i, j], sequence, redfield)
-                        for i in range(T1.shape[0])
-                        for j in range(T1.shape[1])
-                    ]
+                (T1[i, j], t2, T3[i, j], sequence, redfield)
+                for i in range(T1.shape[0])
+                for j in range(T1.shape[1])
+            ]
             if n_processes is None:
                 n_processes = min(cpu_count(), len(tasks))
             if n_processes < 1:
@@ -680,10 +762,7 @@ class Wheel:
                 values = pool.map(
                     _two_des_point_worker, tasks, chunksize=chunksize
                 )
-        if not redfield:
             S = np.asarray(values, dtype=complex).reshape(T1.shape)
-        else:
-            S = values
 
         # 2D Fourier transform
         S_fft = np.fft.fftshift(
