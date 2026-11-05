@@ -4,18 +4,6 @@ from multiprocessing import Pool, cpu_count
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-def _init_two_des_worker(wheel):
-    global _TWO_DES_WORKER_WHEEL
-    _TWO_DES_WORKER_WHEEL = wheel
-
-
-def _two_des_point_worker(args):
-    t1, t2, t3, sequence, redfield = args
-    return _TWO_DES_WORKER_WHEEL.two_des_spectrum_1pt(
-        t1, t2, t3, sequence=sequence
-    )
-
-
 
 class System:
     def __init__(self, locations, tdm_angles):
@@ -25,7 +13,6 @@ class System:
         self.construct_hamiltonian()
         self.n = len(locations)
         self.epsilon = 0.0  # Initialize epsilon to zero
-
 
     def construct_hamiltonian(self, epsilon=0.0):
         self.epsilon = epsilon
@@ -552,6 +539,169 @@ class System:
         ax.set_title(f'2DES Anisotropy at $t_2={t2}$')
         plt.colorbar(im, ax=ax, label='Anisotropy')
 
+    def linear_absorption_spectrum(self, x=True):
+        dt = 0.1
+        t = np.arange(0, 120, dt)
+        S = np.zeros_like(t, dtype=complex)
+        try:
+            from qutip import Qobj, brmesolve
+        except ImportError as exc:
+            raise ImportError(
+                'linear_absorption_spectrum requires the qutip package '
+                'when redfield=True'
+            ) from exc
+
+        eta = 0.01
+        cutoff = 2.0
+        site_coupling = 1.0
+        temperature = 2.0
+        sec_cutoff = -1.0
+        nsteps = 1000000
+        ham = self.construct_hamiltonian()
+
+        # Rotating frame
+        omega_ref = self.epsilon
+        ham -= omega_ref * np.eye(self.n + 1)
+
+        ham = np.vstack((
+            np.zeros((1, self.n + 1)), ham
+        ))
+        ham = np.hstack((
+            np.zeros((self.n + 2, 1)), ham
+        ))
+        ham_qobj = Qobj(ham)
+
+        # Transition dipoles for the selected polarization
+        dipoles = np.array(
+            [np.cos(self.center_angle)]
+            + [np.cos(angle) for angle in self.spoke_angles]
+            if x else
+            [np.sin(self.center_angle)]
+            + [np.sin(angle) for angle in self.spoke_angles],
+            dtype=complex,
+        )
+
+        # Raising and lowering operators
+        raising = np.zeros(
+            (self.n + 2, self.n + 2), dtype=complex
+        )
+        raising[1:, 0] = dipoles
+        lowering = raising.conj().T
+
+        rho_0 = np.zeros(
+            (self.n + 2, self.n + 2), dtype=complex
+        )
+        rho_0[0, 0] = 1.0
+
+        # Only the absorption coherence
+        rho_after_pulse = raising @ rho_0
+
+        # Redfield bath operators
+        redfield_operators = []
+        for site in range(1, self.n + 2):
+            coupling_operator = np.zeros_like(
+                ham, dtype=complex
+            )
+            coupling_operator[site, site] = site_coupling
+
+            def ohmic_spectrum(omega):
+                omega = float(omega)
+                frequency = abs(omega)
+
+                if frequency == 0.0:
+                    return 0.0
+
+                spectral_density = (
+                    2.0 * np.pi * eta * frequency
+                    * np.exp(-frequency / cutoff)
+                )
+
+                if temperature == 0.0:
+                    return (
+                        spectral_density
+                        if omega > 0.0 else 0.0
+                    )
+
+                occupation = (
+                    1.0 / np.expm1(frequency / temperature)
+                )
+
+                return spectral_density * (
+                    occupation + 1.0
+                    if omega > 0.0 else occupation
+                )
+
+            redfield_operators.append(
+                (Qobj(coupling_operator), ohmic_spectrum)
+            )
+
+        # Propagate once and collect all snapshots
+        solver_times = np.append(t, 120.0)
+
+        result = brmesolve(
+            ham_qobj,
+            Qobj(rho_after_pulse),
+            solver_times,
+            redfield_operators,
+            sec_cutoff=sec_cutoff,
+            options={'nsteps': nsteps},
+        )
+
+        # Dipole correlation function
+        S = np.asarray([
+            np.trace(lowering @ state.full())
+            for state in result.states[:t.size]
+        ])
+
+        # Suppress finite-time truncation artifacts
+        gamma_window = 0.05
+        S = S * np.exp(-gamma_window * t)
+
+        # Fourier transform with positive excitation-frequency convention
+        padding_factor = 16
+        n_fft = len(t) * padding_factor
+
+        S_fft = dt * np.fft.fftshift(
+            np.fft.fft(np.conj(S), n=n_fft)
+        )
+
+        omega = 2 * np.pi * np.fft.fftshift(
+            np.fft.fftfreq(n_fft, d=dt)
+        )
+
+        # Restore absolute optical frequencies for Redfield mode
+        omega += self.epsilon
+
+        return omega, S_fft
+
+    def plot_linear_absorption(
+        self, ax, x=True, zoom_factor=1.0
+    ):
+        omega, S = self.linear_absorption_spectrum(x=x)
+
+        zoom_factor = float(zoom_factor)
+        if zoom_factor <= 0:
+            raise ValueError("zoom_factor must be positive")
+        zoom_factor = min(zoom_factor, 1.0)
+
+        n = len(omega)
+        keep_n = max(1, int(round(n * zoom_factor)))
+        start = (n - keep_n) // 2
+        end = start + keep_n
+
+        omega = omega[start:end]
+        S = S[start:end]
+
+        absorption = np.real(S)
+
+        ax.plot(omega, absorption, color='tab:blue', lw=1.6)
+        ax.fill_between(
+            omega, 0, absorption,
+            color='tab:blue', alpha=0.25
+        )
+        ax.set_xlabel(r'$\omega/K_s$', fontsize=9)
+        ax.set_ylabel('Linear absorption', fontsize=9)
+        ax.set_title('Linear Absorption Spectrum', fontsize=9)
 
 
 
