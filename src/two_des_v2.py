@@ -24,8 +24,11 @@ class System:
         self.hamiltonian = np.zeros((len(locations), len(locations)), dtype=complex)
         self.construct_hamiltonian()
         self.n = len(locations)
+        self.epsilon = 0.0  # Initialize epsilon to zero
+
 
     def construct_hamiltonian(self, epsilon=0.0):
+        self.epsilon = epsilon
         # Construct the Hamiltonian matrix based on the locations and tdm_angles
         for i in range(self.n):
             for j in range(i):
@@ -79,7 +82,7 @@ class System:
         solver_times = np.unique(np.concatenate(([0.0], t1_values)))
 
         ham = self.construct_hamiltonian()
-        ham -= 150.0 * np.eye(self.n)
+        ham -= ham[0,0] * np.eye(self.n)
         ham = np.vstack((np.zeros((1, self.n)), ham))
         ham = np.hstack((np.zeros((self.n + 1, 1)), ham))
         ham_qobj = Qobj(ham)
@@ -223,7 +226,7 @@ class System:
         solver_times = np.unique(np.concatenate(([0.0], t3_values)))
 
         ham = self.construct_hamiltonian()
-        ham -= 150.0 * np.eye(self.n)
+        ham -= ham[0,0] * np.eye(self.n)
         ham = np.vstack((np.zeros((1, self.n)), ham))
         ham = np.hstack((np.zeros((self.n + 1, 1)), ham))
         ham_qobj = Qobj(ham)
@@ -419,7 +422,7 @@ class System:
         )
 
         # Restore absolute optical frequencies.
-        omega_ref = 150.0
+        omega_ref = self.epsilon
         omega1 += omega_ref
         omega3 += omega_ref
         return omega1, omega3, S_fft
