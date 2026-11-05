@@ -309,7 +309,7 @@ def fig_6():
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
 def fig_7(redfield=False):
-    fig = plt.figure(layout = "constrained", figsize=(12, 9))
+    fig = plt.figure(layout = "constrained", figsize=(14, 9))
     gs = fig.add_gridspec(3,4)
     fig_w1 = fig.add_subplot(gs[0,0])
     fig_w2 = fig.add_subplot(gs[1,0])
