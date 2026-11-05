@@ -672,19 +672,27 @@ class Wheel:
             return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
 
         def operation(rho, left, raising, x):
-            return operation_naive(rho, left, raising, x) - operation_naive(
-                rho, not left, raising, x
-            )
+            # return operation_naive(rho, left, raising, x) - operation_naive(
+            #     rho, not left, raising, x
+            # ) USING A COMMUTATOR IS WRONG HERE
+            return operation_naive(rho, left, raising, x)
 
         signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
+        
         pathway_specs = (
-            (state_after_t1[0], False, False, True, True),
-            (state_after_t1[1], True, True, False, False),
+            # Nonrephasing GSB
             (state_after_t1[0], True, False, True, True),
-            (state_after_t1[1], False, True, False, False),
-            (state_after_t1[0], False, False, True, False),
+
+            # Rephasing GSB
+            (state_after_t1[1], False, True, True, True),
+
+            # Nonrephasing SE
+            (state_after_t1[0], False, False, False, True),
+
+            # Rephasing SE
             (state_after_t1[1], True, True, False, True),
         )
+
         pathways = []
         for rho, left_t2, raising_t2, left_t3, raising_t3 in pathway_specs:
             rho = operation(rho, left_t2, raising_t2, sequence[1] == 'X')
@@ -700,33 +708,70 @@ class Wheel:
                 for time in t3_values
             ])
 
-        rho_totals = [
-            sum(pathway[index] for pathway in pathways)
-            for index in range(t3_values.size)
+        # rho_totals = [
+        #     sum(pathway[index] for pathway in pathways)
+        #     for index in range(t3_values.size)
+        # ]
+        # return np.asarray([
+        #     np.trace(signal_operator @ rho_total)
+        #     for rho_total in rho_totals
+        # ]) nonrephasing and rephasing signals oscillate in different directions, and this code didn't account for that
+
+        # Separate nonrephasing and rephasing pathways
+        # Pathway order:
+        # 0: Nonrephasing GSB
+        # 1: Rephasing GSB
+        # 2: Nonrephasing SE
+        # 3: Rephasing SE
+
+        rho_NR = [
+            pathways[0][i] + pathways[2][i]
+            for i in range(t3_values.size)
         ]
-        return np.asarray([
-            np.trace(signal_operator @ rho_total)
-            for rho_total in rho_totals
+
+        rho_R = [
+            pathways[1][i] + pathways[3][i]
+            for i in range(t3_values.size)
+        ]
+
+        S_NR = np.asarray([
+            np.trace(signal_operator @ rho)
+            for rho in rho_NR
         ])
 
+        S_R = np.asarray([
+            np.trace(signal_operator @ rho)
+            for rho in rho_R
+        ])
+
+        return S_R, S_NR
+
     def two_des_spectrum(
-        self, t2, sequence='XXXX', redfield=False, n_processes=None
-    ):
+    self, t2, sequence='XXXX', redfield=False, n_processes=None
+):
         '''Compute a 2DES spectrum, evaluating time points in parallel.
 
         ``n_processes`` controls the process-pool size for both calculation
-        modes. Redfield rows are evaluated concurrently after all ``t1``
+        modes. Redfield rows are evaluated sequentially after all ``t1``
         states have been generated.
         '''
+
         dt1 = 0.1
         dt3 = 0.1
         t1 = np.arange(0, 25, dt1)
         t3 = np.arange(0, 25, dt3)
+
         if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
+
         if redfield:
             t1_states = self.generate_t1_states(t1, sequence=sequence)
-            # We removed concurrency because it was causing issues with the QuTiP solver. The code below is the original implementation that used ThreadPoolExecutor to compute rows in parallel, but it has been commented out.
+
+            # We removed concurrency because it was causing issues with
+            # the QuTiP solver. The code below is the original
+            # implementation that used ThreadPoolExecutor, but it has
+            # been commented out.
+
             # row_args = [
             #     (state_after_t1, t2, t3, sequence)
             #     for state_after_t1 in t1_states
@@ -739,28 +784,82 @@ class Wheel:
             #         lambda args: self.two_des_spectrum_1row_redfield(*args),
             #         row_args,
             #     )
-            #     S = np.asarray(list(rows), dtype=complex).T
-            S = []
+
+            # Keep rephasing and nonrephasing signals separate.
+            S_R_rows = []
+            S_NR_rows = []
+
             for state_after_t1 in t1_states:
-                row = self.two_des_spectrum_1row_redfield(
+                row_R, row_NR = self.two_des_spectrum_1row_redfield(
                     state_after_t1, t2, t3, sequence=sequence
                 )
-                S.append(row)
-            S = np.asarray(S, dtype=complex).T
+
+                S_R_rows.append(row_R)
+                S_NR_rows.append(row_NR)
+
+            # Both arrays have shape (len(t3), len(t1)).
+            S_R = np.asarray(S_R_rows, dtype=complex).T
+            S_NR = np.asarray(S_NR_rows, dtype=complex).T
+
+            n3, n1 = S_R.shape
+
+            # Rephasing:
+            # Negative Fourier exponent along t1,
+            # positive Fourier exponent along t3.
+            F_R = np.fft.fftshift(
+                np.fft.fft(
+                    np.fft.ifft(S_R, axis=0) * n3,
+                    axis=1
+                ),
+                axes=(0, 1)
+            )
+
+            # Nonrephasing:
+            # Positive Fourier exponent along both t1 and t3.
+            F_NR = np.fft.fftshift(
+                np.fft.ifft2(S_NR, axes=(0, 1)) * (n1 * n3),
+                axes=(0, 1)
+            )
+
+            # Combine the two signals on the same frequency axes.
+            S_fft = F_R + F_NR
+
+            omega1 = 2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(len(t1), d=dt1)
+            )
+
+            omega3 = 2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(len(t3), d=dt3)
+            )
+
+            # Restore absolute optical frequencies.
+            omega_ref = 150.0
+            omega1 += omega_ref
+            omega3 += omega_ref
+
         else:
+            # Original non-Redfield implementation, unchanged.
             T1, T3 = np.meshgrid(t1, t3)
             tasks = [
                 (T1[i, j], t2, T3[i, j], sequence, redfield)
                 for i in range(T1.shape[0])
                 for j in range(T1.shape[1])
             ]
+
             if n_processes is None:
                 n_processes = min(cpu_count(), len(tasks))
             if n_processes < 1:
                 raise ValueError('n_processes must be positive')
             n_processes = min(n_processes, len(tasks))
-            print("Using {} processes for 2DES spectrum computation".format(n_processes))
+
+            print(
+                "Using {} processes for 2DES spectrum computation".format(
+                    n_processes
+                )
+            )
+
             chunksize = max(1, len(tasks) // (n_processes * 20))
+
             with Pool(
                 processes=n_processes,
                 initializer=_init_two_des_worker,
@@ -769,45 +868,42 @@ class Wheel:
                 values = pool.map(
                     _two_des_point_worker, tasks, chunksize=chunksize
                 )
+
             S = np.asarray(values, dtype=complex).reshape(T1.shape)
 
-        # 2D Fourier transform
-        S_fft = np.fft.fftshift(
-            np.fft.fft2(S, axes=(0, 1)),
-            axes=(0, 1)
-        )
+            # Original 2D Fourier transform
+            S_fft = np.fft.fftshift(
+                np.fft.fft2(S, axes=(0, 1)),
+                axes=(0, 1)
+            )
 
-        # np.fft.fftfreq gives ordinary frequency f (cycles / time).
-        # Multiply by 2*pi to obtain angular frequency omega.
-        omega1 = 2 * np.pi * np.fft.fftshift(
-            np.fft.fftfreq(len(t1), d=dt1)
-        )
+            omega1 = 2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(len(t1), d=dt1)
+            )
 
-        omega3 = 2 * np.pi * np.fft.fftshift(
-            np.fft.fftfreq(len(t3), d=dt3)
-        )
+            omega3 = 2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(len(t3), d=dt3)
+            )
 
-        # Restore absolute optical frequencies
-        omega_ref = 150.0
-
-        omega1 -= omega_ref
-        omega3 += omega_ref
+            # Original frequency offsets
+            omega_ref = 150.0
+            omega1 -= omega_ref
+            omega3 += omega_ref
 
         return omega1, omega3, S_fft
 
-    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, redfield=False, n_processes=None):
+    def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False,
+                redfield=False, n_processes=None):
         '''Plot the 2DES spectrum.
 
-        The Hamiltonian and time variables use units where ``K_s = 1`` and
-        ``hbar = 1``.  Since ``K_s`` represents ``100 cm^-1`` in this model,
-        the angular frequencies returned by :meth:`two_des_spectrum` and
-        plotted here are normalized by ``K_s``: a plotted value of
-        ``omega = 1`` corresponds to ``100 cm^-1`` (and ``omega = 0.01``
-        corresponds to ``1 cm^-1``).  The factor of ``2*pi`` in the FFT
-        converts the FFT's cycles-per-time frequencies to angular
-        frequencies, consistent with the Hamiltonian evolution convention.
+        The Hamiltonian and time variables use units where K_s = 1
+        and hbar = 1. Since K_s represents 100 cm^-1 in this model,
+        the plotted angular frequencies are normalized by K_s.
         '''
-        omega1, omega3, S = self.two_des_spectrum(t2, redfield=redfield, n_processes=n_processes)
+
+        omega1, omega3, S = self.two_des_spectrum(
+            t2, redfield=redfield, n_processes=n_processes
+        )
 
         zoom_factor = float(zoom_factor)
         if zoom_factor <= 0:
@@ -816,6 +912,7 @@ class Wheel:
 
         n1 = len(omega1)
         n3 = len(omega3)
+
         keep_n1 = max(1, int(round(n1 * zoom_factor)))
         keep_n3 = max(1, int(round(n3 * zoom_factor)))
 
@@ -829,24 +926,53 @@ class Wheel:
         S = S[start3:end3, start1:end1]
 
         if log:
+            # Preserve original logarithmic magnitude visualization
             S = np.log(np.abs(S) + 1e-10)
+            cmap = 'viridis'
+            norm = None
+
+        elif redfield:
+            S = np.real(S)
+
+            vmax = np.max(np.abs(S))
+            if vmax == 0:
+                vmax = 1.0
+
+            cmap = 'RdBu_r'
+
+            norm = mcolors.AsinhNorm(
+                linear_width=0.02 * vmax,
+                vmin=-vmax,
+                vmax=vmax
+            )
         else:
+            # Preserve original non-Redfield visualization
             S = np.abs(S)
+            cmap = 'viridis'
+            norm = None
 
         im = ax.imshow(
             S,
-            extent=(omega1.min(), omega1.max(), omega3.min(), omega3.max()),
+            extent=(
+                omega1.min(), omega1.max(),
+                omega3.min(), omega3.max()
+            ),
             origin='lower',
             aspect='auto',
-            cmap='viridis',
+            cmap=cmap,
+            norm=norm
         )
+
         ax.set_xlabel(r'$\omega_1/K_s$')
         ax.set_ylabel(r'$\omega_3/K_s$')
         ax.set_title(f'2DES Spectrum at $t_2={t2}$')
-        if not log:
-            plt.colorbar(im, ax=ax, label='Signal Intensity')
-        else: 
+
+        if log:
             plt.colorbar(im, ax=ax, label='Log Signal Intensity')
+        elif redfield:
+            plt.colorbar(im, ax=ax, label='Real 2DES Signal')
+        else:
+            plt.colorbar(im, ax=ax, label='Signal Intensity')
 
     def two_des_anisotropy(self, t2, redfield=False, n_processes=None):
         omega1, omega3, S_xxxx = self.two_des_spectrum(
@@ -900,14 +1026,6 @@ class Wheel:
         ax.set_title(f'2DES Anisotropy at $t_2={t2}$')
         plt.colorbar(im, ax=ax, label='Anisotropy')
 
-    def plot_2des_anisotopy(
-        self, ax, t2=1.0, zoom_factor=1.0, redfield=False
-    ):
-        '''Backward-compatible alias for the correctly spelled method.'''
-        return self.plot_2des_anisotropy(
-            ax, t2=t2, zoom_factor=zoom_factor, redfield=redfield
-        )
-
     def linear_absorption_1pt(self, t, x=True):
         ham = self.construct_hamiltonian()
         ham = np.vstack((np.zeros((1, self.n + 1)), ham))
@@ -932,7 +1050,7 @@ class Wheel:
 
     def linear_absorption_spectrum(self, x=True, redfield=False):
         dt = 0.1
-        t = np.arange(0, 30, dt)
+        t = np.arange(0, 120, dt)
         S = np.zeros_like(t, dtype=complex)
         if redfield:
             try:
@@ -1028,7 +1146,7 @@ class Wheel:
                 )
 
             # Propagate once and collect all snapshots
-            solver_times = np.append(t, 30.0)
+            solver_times = np.append(t, 120.0)
 
             result = brmesolve(
                 ham_qobj,
