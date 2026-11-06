@@ -104,12 +104,12 @@ class System:
         if self._redfield_cache_key == key:
             return self._redfield_cache_tensor
 
-        def ohmic_spectrum(omega):
-            omega = float(omega)
+        def ohmic_spectrum(w):
+            omega = float(w)
             frequency = abs(omega)
 
-            if frequency == 0.0:
-                return 0.0
+            if frequency < 1e-10:
+                return 2.0 * np.pi * eta * temperature
 
             spectral_density = (
                 2.0 * np.pi * eta * frequency
@@ -597,8 +597,8 @@ class System:
             )
             coupling_operator[site, site] = site_coupling
 
-            def ohmic_spectrum(omega):
-                omega = float(omega)
+            def ohmic_spectrum(w):
+                omega = float(w)
                 frequency = abs(omega)
 
                 if frequency < 1e-10:
