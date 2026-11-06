@@ -199,188 +199,87 @@ class System:
         nsteps=1000000,
         include_esa=True,
     ):
-        '''Compute one 2DES row using non-secular Redfield propagation.
+        """Compute one 2DES row.
+        Exactly combines GSB, SE, and ESA by linearity of the Redfield
+        propagator. GSB stays in the uncoupled ground-state population
+        during t2 and therefore requires no t2 solver call.
+        """
+        from qutip import Qobj, brmesolve
 
-        ``state_after_t1`` contains the two post-pulse states for one ``t1``.
-        ``t3_values`` contains all detection times for that row.
-        Each pathway is propagated through the complete ``t3_values`` grid,
-        so the row is returned with one solver pass per pathway rather than
-        one solver pass per 2DES point.
-
-        Parameters
-        ----------
-        eta : float, optional
-            Dimensionless Ohmic bath coupling strength. Defaults to ``0.01``.
-        cutoff : float, optional
-            Ohmic bath cutoff frequency. Defaults to ``2.0``.
-        site_coupling : float, optional
-            Amplitude of each site's energy-fluctuation operator. Defaults to
-            ``1.0``.
-        temperature : float, optional
-            Bath temperature in the same energy units as the Hamiltonian, with
-            Boltzmann's constant set to one. Defaults to ``2.0``.
-            2.0 is because the energy scale of the Hamiltonian is ~100 inverse cm,
-            and 2.0 corresponds to 300K, which is a reasonable temperature for
-            a typical 2DES reading.
-        sec_cutoff : float, optional
-            QuTiP Redfield secular cutoff. A negative value disables the
-            secular approximation; the default is ``-1.0``.
-        nsteps : int, optional
-            Maximum number of internal integration steps for QuTiP's solver
-            per requested output interval. Defaults to ``1000000``.
-        '''
-        try:
-            from qutip import Qobj, brmesolve
-        except ImportError as exc:
-            raise ImportError(
-                'two_des_spectrum_1row_redfield requires the qutip package'
-            ) from exc
-        if eta < 0:
-            raise ValueError('eta must be non-negative')
-        if cutoff <= 0:
-            raise ValueError('cutoff must be positive')
-        if temperature < 0:
-            raise ValueError('temperature must be non-negative')
-        if nsteps < 1:
-            raise ValueError('nsteps must be positive')
+        if eta < 0 or cutoff <= 0 or temperature < 0 or nsteps < 1:
+            raise ValueError('Invalid Redfield bath or solver parameters')
+        if len(sequence) != 4 or any(p not in 'XY' for p in sequence):
+            raise ValueError('sequence must be four X/Y polarization labels')
         state_after_t1 = np.asarray(state_after_t1, dtype=complex)
-        dim = 1 + self.n + self.n*(self.n-1)//2
+        dim = 1 + self.n + self.n * (self.n - 1) // 2
         if state_after_t1.shape != (2, dim, dim):
-            raise ValueError(
-                f'state_after_t1 must have shape (2, {dim}, {dim})'
-            )
+            raise ValueError(f'state_after_t1 must have shape (2, {dim}, {dim})')
         t3_values = np.asarray(t3_values, dtype=float)
-        if t3_values.ndim != 1:
-            raise ValueError('t3_values must be one-dimensional')
+        if t3_values.ndim != 1 or t3_values.size == 0:
+            raise ValueError('t3_values must be a nonempty one-dimensional array')
         if np.any(t3_values < 0):
             raise ValueError('t3_values must be non-negative')
         solver_times = np.unique(np.concatenate(([0.0], t3_values)))
+        t3_indices = np.searchsorted(solver_times, t3_values)
 
         ham, lowering_ops, occupations = self._two_exciton_model()
         ham_qobj = Qobj(ham)
-        td_op_x = lowering_ops['X']
-        td_op_y = lowering_ops['Y']
-        td_op_lowering_x = td_op_x
-        td_op_raising_x = td_op_x.T
-        td_op_lowering_y = td_op_y
-        td_op_raising_y = td_op_y.T
+        lower2 = lowering_ops[sequence[1]]
+        raise2 = lower2.conj().T
+        raise3 = lowering_ops[sequence[2]].conj().T
+        detection = lowering_ops[sequence[3]]
 
-        # Site-energy fluctuations do not couple the ground state.  A
-        # non-secular Redfield treatment is requested with sec_cutoff=-1.
-        redfield_operators = []
-        for site in range(self.n):
-            coupling_operator = np.diag(site_coupling * occupations[site]).astype(complex)
-            coupling_operator = Qobj(coupling_operator)
+        def ohmic_spectrum(omega):
+            omega = float(omega)
+            frequency = abs(omega)
+            if frequency == 0.0:
+                return 0.0  # Existing bath convention; fix separately.
+            spectral_density = (2.0 * np.pi * eta * frequency
+                                * np.exp(-frequency / cutoff))
+            if temperature == 0.0:
+                return spectral_density if omega > 0.0 else 0.0
+            occupation = 1.0 / np.expm1(frequency / temperature)
+            return spectral_density * (occupation + 1.0 if omega > 0.0
+                                       else occupation)
 
-            def ohmic_spectrum(omega):
-                omega = float(omega)
-                frequency = abs(omega)
-                if frequency == 0.0:
-                    return 0.0
-                spectral_density = (
-                    2.0 * np.pi * eta * frequency
-                    * np.exp(-frequency / cutoff)
-                )
-                if temperature == 0.0:
-                    return spectral_density if omega > 0.0 else 0.0
-                occupation = np.expm1(frequency / temperature)
-                occupation = 1.0 / occupation
-                return spectral_density * (
-                    occupation + 1.0 if omega > 0.0 else occupation
-                )
-
-            redfield_operators.append((coupling_operator, ohmic_spectrum))
+        redfield_operators = [
+            (Qobj(np.diag(site_coupling * occupations[site])), ohmic_spectrum)
+            for site in range(self.n)
+        ]
 
         def propagate(rho, times):
-            times = np.asarray(times, dtype=float)
-            if times[-1] == times[0]:
+            if len(times) == 1 or times[-1] == times[0]:
                 return [rho]
             result = brmesolve(
-                ham_qobj,
-                Qobj(rho),
-                times,
-                redfield_operators,
-                sec_cutoff=sec_cutoff,
-                options={'nsteps': nsteps},
+                ham_qobj, Qobj(rho), times, redfield_operators,
+                sec_cutoff=sec_cutoff, options={'nsteps': nsteps},
             )
             return [state.full() for state in result.states]
 
-        def operation_naive(rho, left, raising, x):
-            if left:
-                if raising:
-                    return td_op_raising_x @ rho if x else td_op_raising_y @ rho
-                return td_op_lowering_x @ rho if x else td_op_lowering_y @ rho
-            if raising:
-                return rho @ td_op_raising_x if x else rho @ td_op_raising_y
-            return rho @ td_op_lowering_x if x else rho @ td_op_lowering_y
+        nr_t1, r_t1 = state_after_t1
+        # Ground-state bleaching: these are proportional to |g><g|.
+        # Their populations are stationary during t2 because the ground
+        # state is isolated by both the Hamiltonian and bath operators.
+        nr_gsb = lower2 @ nr_t1
+        r_gsb = r_t1 @ raise2
 
-        def operation(rho, left, raising, x):
-            # return operation_naive(rho, left, raising, x) - operation_naive(
-            #     rho, not left, raising, x
-            # ) USING A COMMUTATOR IS WRONG HERE
-            return operation_naive(rho, left, raising, x)
+        # Stimulated emission and ESA share the SAME state during t2.
+        nr_excited = propagate(nr_t1 @ lower2, [0.0, t2])[-1]
+        r_excited = propagate(raise2 @ r_t1, [0.0, t2])[-1]
 
-        signal_operator = td_op_x if sequence[3] == 'X' else td_op_y
-        
-        pathway_specs = (
-            # Nonrephasing GSB
-            (state_after_t1[0], True, False, True, True),
-
-            # Rephasing GSB
-            (state_after_t1[1], False, True, True, True),
-
-            # Nonrephasing SE
-            (state_after_t1[0], False, False, False, True),
-
-            # Rephasing SE
-            (state_after_t1[1], True, True, False, True),
-        )
+        # Combine all pathways BEFORE t3 evolution (linearity).
+        nr_start_t3 = raise3 @ nr_gsb + nr_excited @ raise3
+        r_start_t3 = raise3 @ r_gsb + r_excited @ raise3
         if include_esa:
-            # ESA shares the excited-state t2 density matrix with SE.
-            # The third interaction raises the ket into the two-exciton manifold.
-            # ESA has the opposite overall sign from GSB and SE.
-            pathway_specs += (
-                (state_after_t1[0], False, False, True, True),  # NR ESA
-                (state_after_t1[1], True, True, True, True),    # R ESA
-            )
+            nr_start_t3 -= raise3 @ nr_excited
+            r_start_t3 -= raise3 @ r_excited
 
-        pathways = []
-        for rho, left_t2, raising_t2, left_t3, raising_t3 in pathway_specs:
-            rho = operation(rho, left_t2, raising_t2, sequence[1] == 'X')
-            rho = propagate(rho, [0.0, t2])[-1]
-            rho = operation(rho, left_t3, raising_t3, sequence[2] == 'X')
-            states = propagate(rho, solver_times)
-            states_by_time = {
-                round(float(time), 12): state
-                for time, state in zip(solver_times, states)
-            }
-            pathways.append([
-                states_by_time[round(float(time), 12)]
-                for time in t3_values
-            ])
-
-        rho_NR = [
-            pathways[0][i] + pathways[2][i]
-            - (pathways[4][i] if include_esa else 0)
-            for i in range(t3_values.size)
-        ]
-
-        rho_R = [
-            pathways[1][i] + pathways[3][i]
-            - (pathways[5][i] if include_esa else 0)
-            for i in range(t3_values.size)
-        ]
-
-        S_NR = np.asarray([
-            np.trace(signal_operator @ rho)
-            for rho in rho_NR
-        ])
-
-        S_R = np.asarray([
-            np.trace(signal_operator @ rho)
-            for rho in rho_R
-        ])
-
+        nr_states = propagate(nr_start_t3, solver_times)
+        r_states = propagate(r_start_t3, solver_times)
+        S_NR = np.array([np.trace(detection @ nr_states[i])
+                         for i in t3_indices], dtype=complex)
+        S_R = np.array([np.trace(detection @ r_states[i])
+                        for i in t3_indices], dtype=complex)
         return S_R, S_NR
 
     def two_des_spectrum(
