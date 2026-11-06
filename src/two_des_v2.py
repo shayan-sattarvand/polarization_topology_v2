@@ -10,13 +10,16 @@ class System:
         self.locations = locations
         self.tdm_angles = tdm_angles
         self.hamiltonian = np.zeros((len(locations), len(locations)), dtype=complex)
-        self.construct_hamiltonian()
         self.n = len(locations)
         self.epsilon = 0.0  # Initialize epsilon to zero
+        self.construct_hamiltonian()
 
-    def construct_hamiltonian(self, epsilon=0.0):
+    def construct_hamiltonian(self, epsilon=None):
+        if epsilon is None:
+            epsilon = self.epsilon
         self.epsilon = epsilon
         # Construct the Hamiltonian matrix based on the locations and tdm_angles
+        self.hamiltonian = np.eye(self.n, dtype=complex) * epsilon
         for i in range(self.n):
             for j in range(i):
                 # Calculate the interaction term based on the locations and tdm_angles
@@ -24,6 +27,7 @@ class System:
                 # Update the Hamiltonian matrix with the interaction term
                 self.hamiltonian[i, j] = interaction
                 self.hamiltonian[j, i] = interaction  # Ensure Hermitian property
+        return self.hamiltonian
     
     def compute_eigen(self, epsilon=0.0):
         # Compute the eigenvalues and eigenvectors of the Hamiltonian
@@ -201,9 +205,9 @@ class System:
         if nsteps < 1:
             raise ValueError('nsteps must be positive')
         state_after_t1 = np.asarray(state_after_t1, dtype=complex)
-        if state_after_t1.shape != (2, self.n + 2, self.n + 2):
+        if state_after_t1.shape != (2, self.n + 1, self.n + 1):
             raise ValueError(
-                'state_after_t1 must have shape (2, n + 2, n + 2)'
+                'state_after_t1 must have shape (2, n + 1, n + 1)'
             )
         t3_values = np.asarray(t3_values, dtype=float)
         if t3_values.ndim != 1:
@@ -561,35 +565,33 @@ class System:
 
         # Rotating frame
         omega_ref = self.epsilon
-        ham -= omega_ref * np.eye(self.n + 1)
+        ham -= omega_ref * np.eye(self.n)
 
         ham = np.vstack((
-            np.zeros((1, self.n + 1)), ham
+            np.zeros((1, self.n)), ham
         ))
         ham = np.hstack((
-            np.zeros((self.n + 2, 1)), ham
+            np.zeros((self.n + 1, 1)), ham
         ))
         ham_qobj = Qobj(ham)
 
         # Transition dipoles for the selected polarization
         dipoles = np.array(
-            [np.cos(self.center_angle)]
-            + [np.cos(angle) for angle in self.spoke_angles]
+            np.cos(self.tdm_angles).tolist()
             if x else
-            [np.sin(self.center_angle)]
-            + [np.sin(angle) for angle in self.spoke_angles],
+            np.sin(self.tdm_angles).tolist(),
             dtype=complex,
         )
 
         # Raising and lowering operators
         raising = np.zeros(
-            (self.n + 2, self.n + 2), dtype=complex
+            (self.n + 1, self.n + 1), dtype=complex
         )
         raising[1:, 0] = dipoles
         lowering = raising.conj().T
 
         rho_0 = np.zeros(
-            (self.n + 2, self.n + 2), dtype=complex
+            (self.n + 1, self.n + 1), dtype=complex
         )
         rho_0[0, 0] = 1.0
 
