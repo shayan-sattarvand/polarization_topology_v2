@@ -27,9 +27,9 @@ class System:
                 # Update the Hamiltonian matrix with the interaction term
                 self.hamiltonian[i, j] = interaction
                 self.hamiltonian[j, i] = interaction  # Ensure Hermitian property
-        return self.hamiltonian
+        return self.hamiltonian.copy()
     
-    def compute_eigen(self, epsilon=0.0):
+    def compute_eigen(self, epsilon=None):
         # Compute the eigenvalues and eigenvectors of the Hamiltonian
         self.construct_hamiltonian(epsilon)
         eigenvalues, eigenvectors = np.linalg.eigh(self.hamiltonian)
@@ -600,7 +600,7 @@ class System:
 
         # Redfield bath operators
         redfield_operators = []
-        for site in range(1, self.n + 2):
+        for site in range(1, self.n + 1):
             coupling_operator = np.zeros_like(
                 ham, dtype=complex
             )
