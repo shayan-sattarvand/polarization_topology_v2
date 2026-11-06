@@ -375,7 +375,7 @@ class System:
         )
 
         # Combine the two signals on the same frequency axes.
-        S_fft = F_R + F_NR
+        S_fft = dt1 * dt3 * (F_R + F_NR)
 
         omega1 = 2 * np.pi * np.fft.fftshift(
             np.fft.fftfreq(len(t1), d=dt1)
@@ -467,14 +467,27 @@ class System:
             plt.colorbar(im, ax=ax, label='Signal Intensity')
 
     def two_des_anisotropy(self, t2, n_processes=None):
-        omega1, omega3, S_xxxx = self.two_des_spectrum(
+        omega1, omega3, S_parallel = self.two_des_spectrum(
             t2, sequence='XXXX', n_processes=n_processes
         )
-        _, _, S_xyxy = self.two_des_spectrum(
-            t2, sequence='XYXY', n_processes=n_processes
+        _, _, S_perpendicular = self.two_des_spectrum(
+            t2, sequence='XXYY', n_processes=n_processes
         )
-        with np.errstate(divide='ignore', invalid='ignore'):
-            anisotropy = (S_xxxx - S_xyxy) / (S_xxxx + 2 * S_xyxy)
+
+        parallel = np.real(S_parallel)
+        perpendicular = np.real(S_perpendicular)
+
+        denominator = parallel + 2 * perpendicular
+
+        anisotropy = np.full(denominator.shape, np.nan)
+        threshold = 0.02 * np.max(np.abs(denominator))
+
+        mask = np.abs(denominator) > threshold
+        anisotropy[mask] = (
+            (parallel[mask] - perpendicular[mask])
+            / denominator[mask]
+        )
+
         return omega1, omega3, anisotropy
 
     def plot_2des_anisotropy(
@@ -500,8 +513,12 @@ class System:
         omega1 = omega1[start1:end1]
         omega3 = omega3[start3:end3]
 
-        anisotropy = np.abs(anisotropy)
         anisotropy = anisotropy[start3:end3, start1:end1]
+
+        anisotropy = np.ma.masked_invalid(anisotropy)
+
+        cmap = plt.get_cmap('coolwarm').copy()
+        cmap.set_bad('lightgray')
 
         im = ax.imshow(
             anisotropy,
@@ -509,7 +526,8 @@ class System:
             origin='lower',
             aspect='auto',
             vmin=-0.5,
-            vmax=0.5
+            vmax=0.5, 
+            cmap=cmap
         )
         ax.set_xlabel(r'$\omega_1/K_s$')
         ax.set_ylabel(r'$\omega_3/K_s$')
@@ -583,8 +601,8 @@ class System:
                 omega = float(omega)
                 frequency = abs(omega)
 
-                if frequency == 0.0:
-                    return 0.0
+                if frequency < 1e-10:
+                    return 2.0 * np.pi * eta * temperature
 
                 spectral_density = (
                     2.0 * np.pi * eta * frequency
