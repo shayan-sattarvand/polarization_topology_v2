@@ -308,7 +308,7 @@ def fig_6():
     eig_fig.set_ylabel("Multiplicity")
     plt.savefig(os.path.join(FIGURES_DIR, 'fig_6.png'), dpi=300)
 
-def fig_7(redfield=False):
+def fig_7():
     fig = plt.figure(layout = "constrained", figsize=(14, 9))
     gs = fig.add_gridspec(3,4)
     fig_w1 = fig.add_subplot(gs[0,0])
@@ -339,20 +339,20 @@ def fig_7(redfield=False):
     print('Plotting linear absorption...')
     for ax, w in zip([w1_spec, w2_spec, w3_spec], [w1, w2, w3]):
         print(f'Plotting linear absorption for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_linear_absorption(ax, zoom_factor = 0.2, redfield=redfield)
+        w.plot_linear_absorption(ax, zoom_factor = 0.2)
     print('Plotting 2DES spectra...')
     for ax, w in zip([w1_2des, w2_2des, w3_2des], [w1, w2, w3]):
         print(f'Plotting 2DES spectra for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des(ax, zoom_factor = 0.3, log=False, redfield=redfield)
+        w.plot_2des(ax, zoom_factor = 0.3, log=False)
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotropy(ax, zoom_factor = 0.3, redfield=redfield)
-    plt.savefig(os.path.join(FIGURES_DIR, f'fig_7{'' if not redfield else '_redfield'}.png'), dpi=300)
+        w.plot_2des_anisotropy(ax, zoom_factor = 0.3)
+    plt.savefig(os.path.join(FIGURES_DIR, f'fig_7_redfield.png'), dpi=300)
 
 def test_2des():
     w = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
-    w.plot_2des(plt.gca(), zoom_factor = 0.3, log=False, redfield=True)
+    w.plot_2des(plt.gca(), zoom_factor = 0.3, log=False)
     plt.savefig(os.path.join(FIGURES_DIR, f'test_2des.png'), dpi=300)
 
 if __name__ == '__main__':
@@ -363,7 +363,7 @@ if __name__ == '__main__':
     # fig_5()
     # fig_6()
     # test_2des()
-    fig_7(redfield=True)
+    fig_7()
 
 
 
