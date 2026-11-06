@@ -145,6 +145,7 @@ class Wheel:
         self.all_edges = all_edges
 
         self.quantum_system = System([center] + self.spokes.tolist(), angles)
+        self.quantum_system.construct_hamiltonian(epsilon=150.0)
         
     def render_wheel(self, ax, draw_dipoles=False, node_size=100):
         '''Render the wheel graph on the given matplotlib axis `ax`. Active edges are colored green, while inactive edges are colored gray.'''
