@@ -1,5 +1,6 @@
 from pgsc import frenkel_coupling
 import numpy as np
+from itertools import combinations
 from multiprocessing import Pool, cpu_count
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -35,6 +36,55 @@ class System:
         eigenvalues, eigenvectors = np.linalg.eigh(self.hamiltonian)
         return eigenvalues, eigenvectors
 
+    def _two_exciton_model(self):
+        """Rotating-frame Hamiltonian, dipoles and site occupations (0/1/2 excitons).
+
+        Basis order: |g>, |0> ... |n-1>, |0,1> ... |n-2,n-1>.
+        Chromophores are hard-core two-level sites: no double occupancy.
+        """
+        h1 = np.asarray(self.construct_hamiltonian(), dtype=complex).copy()
+        h1 -= self.epsilon * np.eye(self.n)
+        pairs = list(combinations(range(self.n), 2))
+        dim = 1 + self.n + len(pairs)
+        ham = np.zeros((dim, dim), dtype=complex)
+        ham[1:1+self.n, 1:1+self.n] = h1
+
+        # The two-exciton Hamiltonian is the hard-core two-particle lift of H1.
+        for p, (i, j) in enumerate(pairs):
+            a = 1 + self.n + p
+            ham[a, a] = h1[i, i] + h1[j, j]
+            for q in range(p):
+                k, l = pairs[q]
+                common = {i, j} & {k, l}
+                if len(common) == 1:
+                    dst = next(iter({i, j} - common))
+                    src = next(iter({k, l} - common))
+                    ham[a, 1+self.n+q] = h1[dst, src]
+                    ham[1+self.n+q, a] = h1[src, dst]
+
+        lowering = {}
+        for polarization, dipoles in (
+            ('X', np.cos(self.tdm_angles)),
+            ('Y', np.sin(self.tdm_angles)),
+        ):
+            op = np.zeros((dim, dim), dtype=complex)
+            for i, mu_i in enumerate(dipoles):
+                op[0, 1+i] = mu_i
+            for p, (i, j) in enumerate(pairs):
+                f = 1 + self.n + p
+                op[1+i, f] = dipoles[j]
+                op[1+j, f] = dipoles[i]
+            lowering[polarization] = op
+
+        occupations = np.zeros((self.n, dim), dtype=float)
+        for i in range(self.n):
+            occupations[i, 1+i] = 1.
+        for p, (i, j) in enumerate(pairs):
+            occupations[i, 1+self.n+p] = 1.
+            occupations[j, 1+self.n+p] = 1.
+
+        return ham, lowering, occupations
+
     def generate_t1_states(
         self,
         t1_values,
@@ -67,30 +117,19 @@ class System:
         if np.any(t1_values < 0):
             raise ValueError('t1_values must be non-negative')
         if t1_values.size == 0:
-            return np.empty((0, 2, self.n + 1, self.n + 1), dtype=complex)
+            dim = 1 + self.n + self.n*(self.n-1)//2
+            return np.empty((0, 2, dim, dim), dtype=complex)
         if np.any(np.diff(t1_values) < 0):
             raise ValueError('t1_values must be sorted in ascending order')
         solver_times = np.unique(np.concatenate(([0.0], t1_values)))
 
-        ham = self.construct_hamiltonian()
-        ham -= ham[0,0] * np.eye(self.n)
-        ham = np.vstack((np.zeros((1, self.n)), ham))
-        ham = np.hstack((np.zeros((self.n + 1, 1)), ham))
+        ham, lowering_ops, occupations = self._two_exciton_model()
         ham_qobj = Qobj(ham)
-
-        td_op_x = np.array([0] + np.cos(self.tdm_angles).tolist(), dtype=complex)
-        td_op_x = np.vstack((
-            td_op_x,
-            np.zeros((self.n, self.n + 1), dtype=complex),
-        ))
-        td_op_y = np.array([0] + np.sin(self.tdm_angles).tolist(), dtype=complex)
-        td_op_y = np.vstack((
-            td_op_y,
-            np.zeros((self.n, self.n + 1), dtype=complex),
-        ))
+        td_op_x = lowering_ops['X']
+        td_op_y = lowering_ops['Y']
         lowering = td_op_x if sequence[0] == 'X' else td_op_y
         raising = lowering.T
-        rho_0 = np.zeros((self.n + 1, self.n + 1), dtype=complex)
+        rho_0 = np.zeros(ham.shape, dtype=complex)
         rho_0[0, 0] = 1.0
         initial_states = (
             raising @ rho_0 - rho_0 @ raising,
@@ -98,9 +137,8 @@ class System:
         )
 
         redfield_operators = []
-        for site in range(1, self.n + 1):
-            coupling_operator = np.zeros_like(ham, dtype=complex)
-            coupling_operator[site, site] = site_coupling
+        for site in range(self.n):
+            coupling_operator = np.diag(site_coupling * occupations[site]).astype(complex)
 
             def ohmic_spectrum(omega):
                 omega = float(omega)
@@ -159,6 +197,7 @@ class System:
         temperature=2.0,
         sec_cutoff=-1.0,
         nsteps=1000000,
+        include_esa=True,
     ):
         '''Compute one 2DES row using non-secular Redfield propagation.
 
@@ -205,9 +244,10 @@ class System:
         if nsteps < 1:
             raise ValueError('nsteps must be positive')
         state_after_t1 = np.asarray(state_after_t1, dtype=complex)
-        if state_after_t1.shape != (2, self.n + 1, self.n + 1):
+        dim = 1 + self.n + self.n*(self.n-1)//2
+        if state_after_t1.shape != (2, dim, dim):
             raise ValueError(
-                'state_after_t1 must have shape (2, n + 1, n + 1)'
+                f'state_after_t1 must have shape (2, {dim}, {dim})'
             )
         t3_values = np.asarray(t3_values, dtype=float)
         if t3_values.ndim != 1:
@@ -216,22 +256,10 @@ class System:
             raise ValueError('t3_values must be non-negative')
         solver_times = np.unique(np.concatenate(([0.0], t3_values)))
 
-        ham = self.construct_hamiltonian()
-        ham -= ham[0,0] * np.eye(self.n)
-        ham = np.vstack((np.zeros((1, self.n)), ham))
-        ham = np.hstack((np.zeros((self.n + 1, 1)), ham))
+        ham, lowering_ops, occupations = self._two_exciton_model()
         ham_qobj = Qobj(ham)
-
-        td_op_x = np.array([0] + np.cos(self.tdm_angles).tolist(), dtype=complex)
-        td_op_x = np.vstack((
-            td_op_x,
-            np.zeros((self.n, self.n + 1), dtype=complex),
-        ))
-        td_op_y = np.array([0] + np.sin(self.tdm_angles).tolist(), dtype=complex)
-        td_op_y = np.vstack((
-            td_op_y,
-            np.zeros((self.n, self.n + 1), dtype=complex),
-        ))
+        td_op_x = lowering_ops['X']
+        td_op_y = lowering_ops['Y']
         td_op_lowering_x = td_op_x
         td_op_raising_x = td_op_x.T
         td_op_lowering_y = td_op_y
@@ -240,9 +268,8 @@ class System:
         # Site-energy fluctuations do not couple the ground state.  A
         # non-secular Redfield treatment is requested with sec_cutoff=-1.
         redfield_operators = []
-        for site in range(1, self.n + 1):
-            coupling_operator = np.zeros_like(ham, dtype=complex)
-            coupling_operator[site, site] = site_coupling
+        for site in range(self.n):
+            coupling_operator = np.diag(site_coupling * occupations[site]).astype(complex)
             coupling_operator = Qobj(coupling_operator)
 
             def ohmic_spectrum(omega):
@@ -308,6 +335,14 @@ class System:
             # Rephasing SE
             (state_after_t1[1], True, True, False, True),
         )
+        if include_esa:
+            # ESA shares the excited-state t2 density matrix with SE.
+            # The third interaction raises the ket into the two-exciton manifold.
+            # ESA has the opposite overall sign from GSB and SE.
+            pathway_specs += (
+                (state_after_t1[0], False, False, True, True),  # NR ESA
+                (state_after_t1[1], True, True, True, True),    # R ESA
+            )
 
         pathways = []
         for rho, left_t2, raising_t2, left_t3, raising_t3 in pathway_specs:
@@ -326,11 +361,13 @@ class System:
 
         rho_NR = [
             pathways[0][i] + pathways[2][i]
+            - (pathways[4][i] if include_esa else 0)
             for i in range(t3_values.size)
         ]
 
         rho_R = [
             pathways[1][i] + pathways[3][i]
+            - (pathways[5][i] if include_esa else 0)
             for i in range(t3_values.size)
         ]
 
@@ -347,7 +384,7 @@ class System:
         return S_R, S_NR
 
     def two_des_spectrum(
-    self, t2, sequence='XXXX', n_processes=None
+    self, t2, sequence='XXXX', n_processes=None, include_esa=True
 ):
         '''Compute a 2DES spectrum, evaluating time points in parallel.
 
@@ -371,7 +408,8 @@ class System:
 
         for state_after_t1 in t1_states:
             row_R, row_NR = self.two_des_spectrum_1row_redfield(
-                state_after_t1, t2, t3, sequence=sequence
+                state_after_t1, t2, t3, sequence=sequence,
+                include_esa=include_esa
             )
 
             S_R_rows.append(row_R)
