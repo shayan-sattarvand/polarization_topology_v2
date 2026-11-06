@@ -14,6 +14,8 @@ class System:
         self.n = len(locations)
         self.epsilon = 0.0  # Initialize epsilon to zero
         self.construct_hamiltonian()
+        self._redfield_cache_key = None
+        self._redfield_cache_tensor = None
 
     def construct_hamiltonian(self, epsilon=None):
         if epsilon is None:
@@ -85,6 +87,64 @@ class System:
 
         return ham, lowering, occupations
 
+    def _get_redfield_tensor(
+        self, ham, occupations,
+        eta=0.01, cutoff=2.0, site_coupling=1.0,
+        temperature=2.0, sec_cutoff=-1.0,
+    ):
+        from qutip import Qobj, bloch_redfield_tensor
+
+        # Rebuild if the Hamiltonian or bath parameters change.
+        key = (
+            ham.shape, ham.tobytes(),
+            occupations.shape, occupations.tobytes(),
+            eta, cutoff, site_coupling, temperature, sec_cutoff,
+        )
+
+        if self._redfield_cache_key == key:
+            return self._redfield_cache_tensor
+
+        def ohmic_spectrum(omega):
+            omega = float(omega)
+            frequency = abs(omega)
+
+            if frequency == 0.0:
+                return 0.0
+
+            spectral_density = (
+                2.0 * np.pi * eta * frequency
+                * np.exp(-frequency / cutoff)
+            )
+
+            if temperature == 0.0:
+                return spectral_density if omega > 0.0 else 0.0
+
+            occupation = 1.0 / np.expm1(frequency / temperature)
+
+            return spectral_density * (
+                occupation + 1.0 if omega > 0.0 else occupation
+            )
+
+        redfield_operators = [
+            (
+                Qobj(np.diag(site_coupling * occupations[site])),
+                ohmic_spectrum,
+            )
+            for site in range(self.n)
+        ]
+
+        R = bloch_redfield_tensor(
+            Qobj(ham),
+            redfield_operators,
+            sec_cutoff=sec_cutoff,
+            fock_basis=True,
+        )
+
+        self._redfield_cache_key = key
+        self._redfield_cache_tensor = R
+
+        return R
+
     def generate_t1_states(
         self,
         t1_values,
@@ -98,7 +158,7 @@ class System:
     ):
         '''Generate both post-pulse states for every requested ``t1`` value.'''
         try:
-            from qutip import Qobj, brmesolve
+            from qutip import Qobj, mesolve
         except ImportError as exc:
             raise ImportError(
                 'generate_t1_states requires the qutip package'
@@ -124,7 +184,11 @@ class System:
         solver_times = np.unique(np.concatenate(([0.0], t1_values)))
 
         ham, lowering_ops, occupations = self._two_exciton_model()
-        ham_qobj = Qobj(ham)
+
+        R = self._get_redfield_tensor(
+            ham, occupations,
+            eta, cutoff, site_coupling, temperature, sec_cutoff
+        )
         td_op_x = lowering_ops['X']
         td_op_y = lowering_ops['Y']
         lowering = td_op_x if sequence[0] == 'X' else td_op_y
@@ -136,38 +200,19 @@ class System:
             rho_0 @ lowering - lowering @ rho_0,
         )
 
-        redfield_operators = []
-        for site in range(self.n):
-            coupling_operator = np.diag(site_coupling * occupations[site]).astype(complex)
-
-            def ohmic_spectrum(omega):
-                omega = float(omega)
-                frequency = abs(omega)
-                if frequency == 0.0:
-                    return 0.0
-                spectral_density = (
-                    2.0 * np.pi * eta * frequency
-                    * np.exp(-frequency / cutoff)
-                )
-                if temperature == 0.0:
-                    return spectral_density if omega > 0.0 else 0.0
-                occupation = 1.0 / np.expm1(frequency / temperature)
-                return spectral_density * (
-                    occupation + 1.0 if omega > 0.0 else occupation
-                )
-
-            redfield_operators.append((Qobj(coupling_operator), ohmic_spectrum))
+        
 
         def propagate(rho):
             if solver_times[-1] == 0.0:
                 return [rho.copy()]
-            result = brmesolve(
-                ham_qobj,
+            result = mesolve(
+                R,
                 Qobj(rho),
                 solver_times,
-                redfield_operators,
-                sec_cutoff=sec_cutoff,
-                options={'nsteps': nsteps},
+                options={
+                    'nsteps': nsteps,
+                    'normalize_output': False,
+                },
             )
             states_by_time = {
                 round(float(time), 12): state.full()
@@ -204,7 +249,7 @@ class System:
         propagator. GSB stays in the uncoupled ground-state population
         during t2 and therefore requires no t2 solver call.
         """
-        from qutip import Qobj, brmesolve
+        from qutip import Qobj, mesolve
 
         if eta < 0 or cutoff <= 0 or temperature < 0 or nsteps < 1:
             raise ValueError('Invalid Redfield bath or solver parameters')
@@ -223,36 +268,27 @@ class System:
         t3_indices = np.searchsorted(solver_times, t3_values)
 
         ham, lowering_ops, occupations = self._two_exciton_model()
-        ham_qobj = Qobj(ham)
+
+        R = self._get_redfield_tensor(
+            ham, occupations,
+            eta, cutoff, site_coupling, temperature, sec_cutoff
+        )
         lower2 = lowering_ops[sequence[1]]
         raise2 = lower2.conj().T
         raise3 = lowering_ops[sequence[2]].conj().T
         detection = lowering_ops[sequence[3]]
 
-        def ohmic_spectrum(omega):
-            omega = float(omega)
-            frequency = abs(omega)
-            if frequency == 0.0:
-                return 0.0  # Existing bath convention; fix separately.
-            spectral_density = (2.0 * np.pi * eta * frequency
-                                * np.exp(-frequency / cutoff))
-            if temperature == 0.0:
-                return spectral_density if omega > 0.0 else 0.0
-            occupation = 1.0 / np.expm1(frequency / temperature)
-            return spectral_density * (occupation + 1.0 if omega > 0.0
-                                       else occupation)
-
-        redfield_operators = [
-            (Qobj(np.diag(site_coupling * occupations[site])), ohmic_spectrum)
-            for site in range(self.n)
-        ]
-
         def propagate(rho, times):
             if len(times) == 1 or times[-1] == times[0]:
                 return [rho]
-            result = brmesolve(
-                ham_qobj, Qobj(rho), times, redfield_operators,
-                sec_cutoff=sec_cutoff, options={'nsteps': nsteps},
+            result = mesolve(
+                R,
+                Qobj(rho),
+                times,
+                options={
+                    'nsteps': nsteps,
+                    'normalize_output': False,
+                },
             )
             return [state.full() for state in result.states]
 
