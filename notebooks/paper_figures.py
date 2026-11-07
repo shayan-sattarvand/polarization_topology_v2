@@ -26,6 +26,7 @@ import fig_kagome
 import fig_square
 import fig_triangular
 
+from qutip import liouvillian, Qobj
 
     
 def fig_1():
@@ -343,11 +344,11 @@ def fig_7():
     print('Plotting 2DES spectra...')
     for ax, w in zip([w1_2des, w2_2des, w3_2des], [w1, w2, w3]):
         print(f'Plotting 2DES spectra for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des(ax, zoom_factor = 0.3, log=False)
+        w.plot_2des(ax, log=False)
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotropy(ax, zoom_factor = 0.3)
+        w.plot_2des_anisotropy(ax)
     plt.savefig(os.path.join(FIGURES_DIR, f'fig_7_redfield.png'), dpi=300)
 
 def test_2des():
