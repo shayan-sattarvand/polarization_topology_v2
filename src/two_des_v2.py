@@ -612,10 +612,10 @@ class System:
             plt.colorbar(im, ax=ax, label='Signal Intensity')
 
     def two_des_anisotropy(self, t2, n_processes=None):
-        omega1, omega3, S_parallel = self.two_des_spectrum(
+        omega1, omega3, S_parallel = self.two_des_spectrum_batched(
             t2, sequence='XXXX', n_processes=n_processes
         )
-        _, _, S_perpendicular = self.two_des_spectrum(
+        _, _, S_perpendicular = self.two_des_spectrum_batched(
             t2, sequence='XXYY', n_processes=n_processes
         )
 
