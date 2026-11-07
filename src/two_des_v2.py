@@ -544,7 +544,7 @@ class System:
         the plotted angular frequencies are normalized by K_s.
         '''
 
-        omega1, omega3, S = self.two_des_spectrum(
+        omega1, omega3, S = self.two_des_spectrum_batched(
             t2, n_processes=n_processes
         )
 
