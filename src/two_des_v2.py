@@ -321,7 +321,7 @@ class System:
     def two_des_spectrum(
     self, t2, sequence='XXXX', n_processes=None, include_esa=True
 ):
-        '''Compute a 2DES spectrum, evaluating time points in parallel.
+        '''DEPRECATED. Compute a 2DES spectrum, evaluating time points in parallel.
 
         ``n_processes`` controls the process-pool size for both calculation
         modes. Redfield rows are evaluated sequentially after all ``t1``
@@ -394,139 +394,146 @@ class System:
     def two_des_spectrum_batched(
         self, t2, sequence='XXXX', n_processes=None, include_esa=True
     ):
-        """
-        Compute 2DES using batched t2 propagation and adjoint t3 detection.
+        """2DES using excitation-manifold blocks and adjoint detection.
 
-        Preserves the GSB/SE/ESA pathways and FFT conventions of
-        two_des_spectrum().
+        For n=5, propagate only the 10, 01, 11, and 21 Liouville blocks
+        (dimensions 5, 5, 25, and 50) of the full 256-dimensional
+        Redfield generator. The full generator is still built/cached.
+
+        The t1/t3 grids and FFT normalization match the user's current
+        local implementation (dt=0.3, tmax=25, dt1*dt3 factor).
         """
         from scipy.sparse.linalg import expm_multiply
 
         if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
         if len(sequence) != 4 or any(p not in 'XY' for p in sequence):
-            raise ValueError('sequence must be four X/Y polarization labels')
+            raise ValueError('sequence must contain four X/Y labels')
         if t2 < 0:
             raise ValueError('t2 must be non-negative')
 
-        dt1 = dt3 = 0.1
+        dt1 = dt3 = 0.3
         t1 = np.arange(0, 25, dt1)
         t3 = np.arange(0, 25, dt3)
         n1, n3 = len(t1), len(t3)
 
-        # Generate t1 states: shape (n1, 2, dim, dim).
-        # Branch 0 = nonrephasing; branch 1 = rephasing.
-        t1_states = self.generate_t1_states(t1, sequence=sequence)
-        nr_t1, r_t1 = t1_states[:, 0], t1_states[:, 1]
-
         ham, lowering_ops, occupations = self._two_exciton_model()
-        R = self._get_redfield_tensor(ham, occupations)
-        R_matrix = R.full()
         dim = ham.shape[0]
+        one = np.arange(1, 1 + self.n)
+        two = np.arange(1 + self.n, dim)
+        zero = np.array([0])
 
+        # QuTiP's operator vectorization: index(row=i, col=j) = i + dim*j.
+        def sector_indices(rows, cols):
+            return (rows[:, None] + dim * cols[None, :]).ravel(order='F')
+
+        i10 = sector_indices(one, zero)   # |1><0|: optical coherence
+        i01 = sector_indices(zero, one)   # |0><1|: conjugate coherence
+        i11 = sector_indices(one, one)    # |1><1|: excited density matrix
+        i21 = sector_indices(two, one)    # |2><1|: ESA coherence
+
+        R_full = self._get_redfield_tensor(ham, occupations).full()
+        R10 = R_full[np.ix_(i10, i10)]
+        R01 = R_full[np.ix_(i01, i01)]
+        R11 = R_full[np.ix_(i11, i11)]
+        if include_esa:
+            R21 = R_full[np.ix_(i21, i21)]
+
+        # Propagate a single sector vector across an equally spaced time grid.
+        def trajectory(generator, initial, times):
+            if len(times) == 1:
+                return initial[None, :]
+            return expm_multiply(
+                generator, initial,
+                start=0.0, stop=float(times[-1]),
+                num=len(times), endpoint=True,
+            )
+
+        lower1 = lowering_ops[sequence[0]]
+        raise1 = lower1.conj().T
         lower2 = lowering_ops[sequence[1]]
         raise2 = lower2.conj().T
         raise3 = lowering_ops[sequence[2]].conj().T
         detection = lowering_ops[sequence[3]]
 
-        # Convert batches of density matrices into column-major vectors.
-        # QuTiP uses Fortran-order vectorization.
-        def vectorize_batch(states):
-            return np.moveaxis(states, 0, -1).reshape(
-                dim * dim, n1, order='F'
+        rho0 = np.zeros((dim, dim), dtype=complex)
+        rho0[0, 0] = 1.0
+        nr_initial = raise1 @ rho0 - rho0 @ raise1
+        r_initial = rho0 @ lower1 - lower1 @ rho0
+
+        nr_t1_small = trajectory(R10, nr_initial.ravel(order='F')[i10], t1)
+        r_t1_small = trajectory(R01, r_initial.ravel(order='F')[i01], t1)
+
+        # Only embed small t1 vectors into 16x16 arrays for the pulse algebra.
+        nr_t1 = np.zeros((n1, dim, dim), dtype=complex)
+        r_t1 = np.zeros_like(nr_t1)
+        nr_t1[:, one, 0] = nr_t1_small
+        r_t1[:, 0, one] = r_t1_small
+
+        # Extract a density-matrix block from all t1 states and stack it
+        # as columns in QuTiP/Fortran vectorization order.
+        def pack(states, rows, cols):
+            blocks = states[:, rows[:, None], cols[None, :]]
+            return blocks.transpose(1, 2, 0).reshape(
+                len(rows) * len(cols), n1, order='F'
             )
 
-        def unvectorize_batch(columns):
-            return np.moveaxis(
-                columns.reshape(dim, dim, n1, order='F'),
-                -1, 0
-            )
-
-        # ----- Ground-state bleaching -----
-        # These are ground-state populations, stationary during t2.
+        # GSB stays in |0><0| throughout t2.
         nr_gsb = lower2 @ nr_t1
         r_gsb = r_t1 @ raise2
 
-        # ----- SE / ESA: second interaction -----
-        nr_excited0 = nr_t1 @ lower2
-        r_excited0 = raise2 @ r_t1
-
-        # Stack both branches into one (dim**2, 2*n1) matrix.
-        B2 = np.concatenate(
-            (
-                vectorize_batch(nr_excited0),
-                vectorize_batch(r_excited0)
-            ),
-            axis=1
-        )
-
-        # ----- Batched t2 propagation -----
+        # Only the 25-dimensional |1><1| sector needs t2 propagation.
+        B2 = np.concatenate((
+            pack(nr_t1 @ lower2, one, one),
+            pack(raise2 @ r_t1, one, one),
+        ), axis=1)
         if t2 != 0:
-            B2 = expm_multiply(R_matrix * t2, B2)
+            B2 = expm_multiply(R11 * t2, B2)
 
-        nr_excited = unvectorize_batch(B2[:, :n1])
-        r_excited = unvectorize_batch(B2[:, n1:])
+        def unpack_11(columns):
+            blocks = columns.reshape(
+                len(one), len(one), n1, order='F'
+            ).transpose(2, 0, 1)
+            states = np.zeros((n1, dim, dim), dtype=complex)
+            states[:, one[:, None], one[None, :]] = blocks
+            return states
 
-        # ----- Third interaction: combine GSB + SE - ESA -----
+        nr_excited = unpack_11(B2[:, :n1])
+        r_excited = unpack_11(B2[:, n1:])
+
+        # Same GSB + SE - ESA algebra as the original implementation.
         nr_start = raise3 @ nr_gsb + nr_excited @ raise3
         r_start = raise3 @ r_gsb + r_excited @ raise3
-
         if include_esa:
             nr_start -= raise3 @ nr_excited
             r_start -= raise3 @ r_excited
 
-        # ----- Adjoint t3 propagation -----
-        # Tr(D exp(R*t3) rho)
-        # = (exp(R^H*t3) vec(D^H))^H vec(rho).
+        # Adjoint detection in the |1><0| sector (GSB + SE).
+        d = detection.conj().T.ravel(order='F')
+        W10 = trajectory(R10.conj().T, d[i10], t3).conj()
+        S_NR = W10 @ pack(nr_start, one, zero)
+        S_R = W10 @ pack(r_start, one, zero)
 
-        detection_vector = detection.conj().T.reshape(
-            dim * dim, order='F'
-        )
+        # ESA is a separate, independent |2><1| coherence sector.
+        if include_esa:
+            W21 = trajectory(R21.conj().T, d[i21], t3).conj()
+            S_NR += W21 @ pack(nr_start, two, one)
+            S_R += W21 @ pack(r_start, two, one)
 
-        detection_trajectory = expm_multiply(
-            R_matrix.conj().T,
-            detection_vector,
-            start=0.0,
-            stop=float(t3[-1]),
-            num=n3,
-            endpoint=True
-        )
-
-        # Shape (n3, dim**2).
-        W = detection_trajectory.conj()
-
-        # All t1/t3 combinations from matrix multiplication.
-        S_R = W @ vectorize_batch(r_start)
-        S_NR = W @ vectorize_batch(nr_start)
-
-        # ----- Original FFT conventions -----
+        # Preserve original rephasing/nonrephasing FFT signs.
         F_R = np.fft.fftshift(
-            np.fft.fft(
-                np.fft.ifft(S_R, axis=0) * n3,
-                axis=1
-            ),
-            axes=(0, 1)
+            np.fft.fft(np.fft.ifft(S_R, axis=0) * n3, axis=1),
+            axes=(0, 1),
         )
-
         F_NR = np.fft.fftshift(
             np.fft.ifft2(S_NR, axes=(0, 1)) * (n1 * n3),
-            axes=(0, 1)
+            axes=(0, 1),
         )
-
-        S_fft = F_R + F_NR
-
-        omega1 = (
-            2 * np.pi * np.fft.fftshift(
-                np.fft.fftfreq(n1, d=dt1)
-            ) + self.epsilon
-        )
-
-        omega3 = (
-            2 * np.pi * np.fft.fftshift(
-                np.fft.fftfreq(n3, d=dt3)
-            ) + self.epsilon
-        )
-
+        S_fft = dt1 * dt3 * (F_R + F_NR)
+        omega1 = (2 * np.pi * np.fft.fftshift(np.fft.fftfreq(n1, d=dt1))
+                  + self.epsilon)
+        omega3 = (2 * np.pi * np.fft.fftshift(np.fft.fftfreq(n3, d=dt3))
+                  + self.epsilon)
         return omega1, omega3, S_fft
 
     def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, n_processes=None):
