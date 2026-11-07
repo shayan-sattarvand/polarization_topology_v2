@@ -391,6 +391,144 @@ class System:
         omega3 += omega_ref
         return omega1, omega3, S_fft
 
+    def two_des_spectrum_batched(
+        self, t2, sequence='XXXX', n_processes=None, include_esa=True
+    ):
+        """
+        Compute 2DES using batched t2 propagation and adjoint t3 detection.
+
+        Preserves the GSB/SE/ESA pathways and FFT conventions of
+        two_des_spectrum().
+        """
+        from scipy.sparse.linalg import expm_multiply
+
+        if n_processes is not None and n_processes < 1:
+            raise ValueError('n_processes must be positive')
+        if len(sequence) != 4 or any(p not in 'XY' for p in sequence):
+            raise ValueError('sequence must be four X/Y polarization labels')
+        if t2 < 0:
+            raise ValueError('t2 must be non-negative')
+
+        dt1 = dt3 = 0.1
+        t1 = np.arange(0, 25, dt1)
+        t3 = np.arange(0, 25, dt3)
+        n1, n3 = len(t1), len(t3)
+
+        # Generate t1 states: shape (n1, 2, dim, dim).
+        # Branch 0 = nonrephasing; branch 1 = rephasing.
+        t1_states = self.generate_t1_states(t1, sequence=sequence)
+        nr_t1, r_t1 = t1_states[:, 0], t1_states[:, 1]
+
+        ham, lowering_ops, occupations = self._two_exciton_model()
+        R = self._get_redfield_tensor(ham, occupations)
+        R_matrix = R.full()
+        dim = ham.shape[0]
+
+        lower2 = lowering_ops[sequence[1]]
+        raise2 = lower2.conj().T
+        raise3 = lowering_ops[sequence[2]].conj().T
+        detection = lowering_ops[sequence[3]]
+
+        # Convert batches of density matrices into column-major vectors.
+        # QuTiP uses Fortran-order vectorization.
+        def vectorize_batch(states):
+            return np.moveaxis(states, 0, -1).reshape(
+                dim * dim, n1, order='F'
+            )
+
+        def unvectorize_batch(columns):
+            return np.moveaxis(
+                columns.reshape(dim, dim, n1, order='F'),
+                -1, 0
+            )
+
+        # ----- Ground-state bleaching -----
+        # These are ground-state populations, stationary during t2.
+        nr_gsb = lower2 @ nr_t1
+        r_gsb = r_t1 @ raise2
+
+        # ----- SE / ESA: second interaction -----
+        nr_excited0 = nr_t1 @ lower2
+        r_excited0 = raise2 @ r_t1
+
+        # Stack both branches into one (dim**2, 2*n1) matrix.
+        B2 = np.concatenate(
+            (
+                vectorize_batch(nr_excited0),
+                vectorize_batch(r_excited0)
+            ),
+            axis=1
+        )
+
+        # ----- Batched t2 propagation -----
+        if t2 != 0:
+            B2 = expm_multiply(R_matrix * t2, B2)
+
+        nr_excited = unvectorize_batch(B2[:, :n1])
+        r_excited = unvectorize_batch(B2[:, n1:])
+
+        # ----- Third interaction: combine GSB + SE - ESA -----
+        nr_start = raise3 @ nr_gsb + nr_excited @ raise3
+        r_start = raise3 @ r_gsb + r_excited @ raise3
+
+        if include_esa:
+            nr_start -= raise3 @ nr_excited
+            r_start -= raise3 @ r_excited
+
+        # ----- Adjoint t3 propagation -----
+        # Tr(D exp(R*t3) rho)
+        # = (exp(R^H*t3) vec(D^H))^H vec(rho).
+
+        detection_vector = detection.conj().T.reshape(
+            dim * dim, order='F'
+        )
+
+        detection_trajectory = expm_multiply(
+            R_matrix.conj().T,
+            detection_vector,
+            start=0.0,
+            stop=float(t3[-1]),
+            num=n3,
+            endpoint=True
+        )
+
+        # Shape (n3, dim**2).
+        W = detection_trajectory.conj()
+
+        # All t1/t3 combinations from matrix multiplication.
+        S_R = W @ vectorize_batch(r_start)
+        S_NR = W @ vectorize_batch(nr_start)
+
+        # ----- Original FFT conventions -----
+        F_R = np.fft.fftshift(
+            np.fft.fft(
+                np.fft.ifft(S_R, axis=0) * n3,
+                axis=1
+            ),
+            axes=(0, 1)
+        )
+
+        F_NR = np.fft.fftshift(
+            np.fft.ifft2(S_NR, axes=(0, 1)) * (n1 * n3),
+            axes=(0, 1)
+        )
+
+        S_fft = F_R + F_NR
+
+        omega1 = (
+            2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(n1, d=dt1)
+            ) + self.epsilon
+        )
+
+        omega3 = (
+            2 * np.pi * np.fft.fftshift(
+                np.fft.fftfreq(n3, d=dt3)
+            ) + self.epsilon
+        )
+
+        return omega1, omega3, S_fft
+
     def plot_2des(self, ax, t2=1.0, zoom_factor=1.0, log=False, n_processes=None):
         '''Plot the 2DES spectrum.
 
