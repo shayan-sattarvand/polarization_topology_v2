@@ -328,8 +328,8 @@ class System:
         states have been generated.
         '''
 
-        dt1 = 0.1
-        dt3 = 0.1
+        dt1 = 0.3
+        dt3 = 0.3
         t1 = np.arange(0, 25, dt1)
         t3 = np.arange(0, 25, dt3)
 
