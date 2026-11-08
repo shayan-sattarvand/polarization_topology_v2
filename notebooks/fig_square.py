@@ -407,6 +407,12 @@ class Wheel:
     def plot_2des_anisotropy(self, ax, t2=1.0, zoom_factor=1.0):
         return self.quantum_system.plot_2des_anisotropy(ax, t2, zoom_factor)
 
+    def plot_2des_anisotropy_isotropic(
+        self, *args, **kwargs
+    ):
+        return self.quantum_system.plot_2des_anisotropy_isotropic(*args, **kwargs)
+        
+
     def linear_absorption_1pt(self, t, x=True):
         '''DEPRECATED'''
         ham = self.construct_hamiltonian()
