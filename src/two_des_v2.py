@@ -4,6 +4,7 @@ from itertools import combinations
 from multiprocessing import Pool, cpu_count
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from scipy.ndimage import gaussian_filter
 
 
 class System:
@@ -328,10 +329,9 @@ class System:
         states have been generated.
         '''
 
-        dt1 = 0.3
-        dt3 = 0.3
-        t1 = np.arange(0, 25, dt1)
-        t3 = np.arange(0, 25, dt3)
+        dt1 = dt3 = 0.3
+        t1 = np.arange(0, 250, dt1)
+        t3 = np.arange(0, 250, dt3)
 
         if n_processes is not None and n_processes < 1:
             raise ValueError('n_processes must be positive')
@@ -413,8 +413,8 @@ class System:
             raise ValueError('t2 must be non-negative')
 
         dt1 = dt3 = 0.3
-        t1 = np.arange(0, 25, dt1)
-        t3 = np.arange(0, 25, dt3)
+        t1 = np.arange(0, 250, dt1)
+        t3 = np.arange(0, 250, dt3)
         n1, n3 = len(t1), len(t3)
 
         ham, lowering_ops, occupations = self._two_exciton_model()
@@ -623,15 +623,37 @@ class System:
         perpendicular = np.real(S_perpendicular)
 
         denominator = parallel + 2 * perpendicular
+        vmax = np.max(np.abs(denominator))
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        im = ax.imshow(
+            denominator,
+            extent=(omega1.min(), omega1.max(),
+                    omega3.min(), omega3.max()),
+            origin='lower',
+            aspect='auto',
+            cmap='RdBu_r',
+            norm=mcolors.AsinhNorm(
+                linear_width=0.01 * vmax,
+                vmin=-vmax,
+                vmax=vmax
+            )
+        )
+
+        plt.colorbar(im, ax=ax, label='Signed anisotropy denominator')
+        plt.show()
 
         anisotropy = np.full(denominator.shape, np.nan)
-        threshold = 0.02 * np.max(np.abs(denominator))
+        threshold = 0.0002 * np.max(np.abs(denominator))
 
         mask = np.abs(denominator) > threshold
         anisotropy[mask] = (
             (parallel[mask] - perpendicular[mask])
             / denominator[mask]
         )
+        print(f"Masked pixels: {100 * (1 - np.mean(mask)):.1f}%")
+        print(f"Peak denominator: {np.max(np.abs(denominator)):.6g}")
 
         return omega1, omega3, anisotropy
 
@@ -678,6 +700,210 @@ class System:
         ax.set_ylabel(r'$\omega_3/K_s$')
         ax.set_title(f'2DES Anisotropy at $t_2={t2}$')
         plt.colorbar(im, ax=ax, label='Anisotropy')
+
+    def two_des_anisotropy_isotropic(
+        self, t2, n_processes=None, include_esa=True
+    ):
+        """Calculate isotropically averaged 2DES anisotropy.
+
+        Returns:
+            omega1, omega3, anisotropy, strength, denominator
+        """
+        sequences = [
+            'XXXX', 'YYYY',
+            'XXYY', 'YYXX',
+            'XYXY', 'YXYX',
+            'XYYX', 'YXXY'
+        ]
+
+        spectra = {}
+
+        for seq in sequences:
+            omega1, omega3, S = self.two_des_spectrum_batched(
+                t2,
+                sequence=seq,
+                n_processes=n_processes,
+                include_esa=include_esa
+            )
+            spectra[seq] = S
+
+        # Molecular-frame fourth-rank tensor contractions.
+        A = (
+            spectra['XXXX'] + spectra['XXYY']
+            + spectra['YYXX'] + spectra['YYYY']
+        )
+        B = (
+            spectra['XXXX'] + spectra['XYXY']
+            + spectra['YXYX'] + spectra['YYYY']
+        )
+        C = (
+            spectra['XXXX'] + spectra['XYYX']
+            + spectra['YXXY'] + spectra['YYYY']
+        )
+
+        # Exact isotropic rotational averaging in 3D.
+        S_parallel = (A + B + C) / 15.0
+        S_perpendicular = (4.0 * A - B - C) / 30.0
+
+        # Absorptive spectra.
+        parallel = np.real(S_parallel)
+        perpendicular = np.real(S_perpendicular)
+
+        intensity = np.abs(parallel + 2 * perpendicular)
+
+        sigma_bins = 3.0
+
+        parallel = gaussian_filter(
+            parallel, sigma=sigma_bins, mode="constant"
+        )
+
+        perpendicular = gaussian_filter(
+            perpendicular, sigma=sigma_bins, mode="constant"
+        )
+
+        numerator = parallel - perpendicular
+        denominator = parallel + 2.0 * perpendicular
+
+        # Signal magnitude, ignoring cancellation.
+        strength = (
+            np.abs(parallel) + 2.0 * np.abs(perpendicular)
+        )
+
+        # Calculate anisotropy without hard masking.
+        # Undefined ratios are assigned zero for display only.
+        scale = np.max(np.abs(denominator))
+        tolerance = max(1e-14 * scale, np.finfo(float).tiny)
+
+        anisotropy = np.divide(
+            numerator,
+            denominator,
+            out=np.zeros_like(numerator, dtype=float),
+            where=np.abs(denominator) > tolerance
+        )
+
+        return omega1, omega3, anisotropy, strength, denominator, intensity
+
+    def plot_2des_anisotropy_isotropic(
+        self, ax, t2=1.0, zoom_factor=1.0,
+        n_processes=None, include_esa=True,
+        signal_fade=0.005, cancellation_fade=0.05,
+        min_alpha=0.05
+    ):
+        """Plot isotropic 2DES anisotropy with smooth fading.
+
+        Weak-signal and cancellation regions fade toward white
+        rather than being replaced by gray masked pixels.
+        """
+
+
+        omega1, omega3, anisotropy, strength, denominator, intensity = (
+            self.two_des_anisotropy_isotropic(
+                t2,
+                n_processes=n_processes,
+                include_esa=include_esa
+            )
+        )
+
+        if not (0 < zoom_factor <= 1):
+            raise ValueError("zoom_factor must be in (0, 1]")
+        if signal_fade < 0 or cancellation_fade < 0:
+            raise ValueError("Fade parameters must be nonnegative")
+        if not (0 <= min_alpha <= 1):
+            raise ValueError("min_alpha must be between 0 and 1")
+
+        # Save the full-spectrum scale before cropping.
+        peak_strength = np.max(strength)
+
+        # Central frequency zoom.
+        n1, n3 = len(omega1), len(omega3)
+
+        keep1 = max(2, round(n1 * zoom_factor))
+        keep3 = max(2, round(n3 * zoom_factor))
+
+        start1 = (n1 - keep1) // 2
+        start3 = (n3 - keep3) // 2
+
+        sl1 = slice(start1, start1 + keep1)
+        sl3 = slice(start3, start3 + keep3)
+
+        omega1 = omega1[sl1]
+        omega3 = omega3[sl3]
+
+        anisotropy = anisotropy[sl3, sl1]
+        strength = strength[sl3, sl1]
+        denominator = denominator[sl3, sl1]
+
+        # Fade weak-signal regions smoothly.
+        signal_weight = strength / (
+            strength + signal_fade * peak_strength + 1e-30
+        )
+
+        # Fade regions where the denominator nearly cancels.
+        cancellation_weight = np.abs(denominator) / (
+            np.abs(denominator)
+            + cancellation_fade * strength + 1e-30
+        )
+
+        # Opacity varies smoothly between min_alpha and 1.
+        alpha = (
+            min_alpha
+            + (1.0 - min_alpha)
+            * signal_weight
+            * cancellation_weight
+        )
+
+        ax.set_facecolor('white')
+
+        im = ax.imshow(
+            anisotropy,
+            extent=(
+                omega1.min(), omega1.max(),
+                omega3.min(), omega3.max()
+            ),
+            origin='lower',
+            aspect='auto',
+            cmap='coolwarm',
+            vmin=-0.5,
+            vmax=0.5,
+            alpha=alpha
+        )
+
+        peak = np.max(intensity)
+
+        # Relative intensity, with a floor to avoid log(0).
+        relative_intensity = intensity / max(peak, 1e-30)
+
+        log_intensity = np.log10(
+            np.maximum(relative_intensity, 1e-10)
+        )
+
+        # Contours at 0.1% and 1% of peak.
+        levels = [-3, -2]
+
+        contours = ax.contour(
+            omega1,
+            omega3,
+            log_intensity,
+            levels=levels,
+            colors='black',
+            linewidths=0.2,
+            alpha=1,
+            linestyles='solid',
+        )
+
+        ax.set_xlabel(r'$\omega_1/K_s$')
+        ax.set_ylabel(r'$\omega_3/K_s$')
+
+        ax.set_xlim(146.5, 153.5)
+        ax.set_ylim(145, 156)
+
+        ax.set_title(
+            f'Isotropic 2DES Anisotropy at $t_2={t2}$'
+        )
+
+        plt.colorbar(im, ax=ax, label='Anisotropy')
+
+        return im
 
     def linear_absorption_spectrum(self, x=True):
         dt = 0.1
