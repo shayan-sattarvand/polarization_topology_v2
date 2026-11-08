@@ -348,12 +348,66 @@ def fig_7():
     print('Plotting 2DES anisotropy...')
     for ax, w in zip([w1_anis, w2_anis, w3_anis], [w1, w2, w3]):
         print(f'Plotting 2DES anisotropy for wheel with angles: {[angle / DEG for angle in w.spoke_angles]}')
-        w.plot_2des_anisotropy(ax)
+        w.plot_2des_anisotropy_isotropic(ax)
     plt.savefig(os.path.join(FIGURES_DIR, f'fig_7_redfield.png'), dpi=300)
 
 def test_2des():
     w = fig_square.Wheel((0,0), 1, 4, [45 * DEG] + [90 * DEG] * 4, 0)
-    w.plot_2des(plt.gca(), zoom_factor = 0.3, log=False)
+    system = w.quantum_system
+    w1, w3, S_xxxx = system.two_des_spectrum_batched(
+        1.0, sequence='XXXX'
+    )
+    _, _, S_xxyy = system.two_des_spectrum_batched(
+        1.0, sequence='XXYY'
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    vmax = max(
+        np.max(np.abs(S_xxxx.real)),
+        np.max(np.abs(S_xxyy.real))
+    )
+
+    for ax, S, title in zip(
+        axes,
+        [S_xxxx, S_xxyy],
+        ['XXXX', 'XXYY']
+    ):
+        im = ax.imshow(
+            S.real,
+            extent=(w1.min(), w1.max(), w3.min(), w3.max()),
+            origin='lower',
+            cmap='RdBu_r',
+            vmin=-vmax,
+            vmax=vmax,
+            aspect='auto'
+        )
+        ax.set_xlim(140, 160)
+        ax.set_ylim(140, 160)
+        ax.set_title(title)
+
+    parallel = np.real(S_xxxx)
+    perpendicular = np.real(S_xxyy)
+
+    pmax = np.max(np.abs(parallel))
+    qmax = np.max(np.abs(perpendicular))
+
+    print(f"XXXX peak magnitude: {pmax:.6g}")
+    print(f"XXYY peak magnitude: {qmax:.6g}")
+    print(f"XXYY / XXXX ratio:  {qmax / pmax:.3f}")
+
+    denominator = parallel + 2 * perpendicular
+    numerator = parallel - perpendicular
+
+    valid = np.abs(denominator) > 0.01 * np.max(np.abs(denominator))
+    r = numerator[valid] / denominator[valid]
+
+    print(f"Median anisotropy: {np.median(r):.4f}")
+    print(f"Fraction near -0.5: {np.mean(np.abs(r + 0.5) < 0.05):.1%}")
+
+    plt.colorbar(im, ax=axes)
+    plt.show()
+    w.plot_2des_anisotropy(plt.gca(), zoom_factor = 0.3)
     plt.savefig(os.path.join(FIGURES_DIR, f'test_2des.png'), dpi=300)
 
 if __name__ == '__main__':

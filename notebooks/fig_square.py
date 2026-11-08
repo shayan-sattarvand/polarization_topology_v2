@@ -411,7 +411,6 @@ class Wheel:
         self, *args, **kwargs
     ):
         return self.quantum_system.plot_2des_anisotropy_isotropic(*args, **kwargs)
-        
 
     def linear_absorption_1pt(self, t, x=True):
         '''DEPRECATED'''
